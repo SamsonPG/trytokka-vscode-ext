@@ -1,9 +1,8 @@
 /**
  * src/sidebarProvider.ts
- * WebviewViewProvider for the Scout activity bar panel.
- *
- * Manages the HTML webview, sends data via postMessage, receives
- * user actions (connect, open TryTokka, dismiss spike) back.
+ * Scout sidebar — WebviewViewProvider.
+ * Design system: exact TryTokka tokens (canvas #080C0B, brand #34E89A,
+ * surface #0F1512, rim #24302A, radius-xl 22px, shadow-soft, btn-primary gradient).
  */
 import * as vscode from 'vscode'
 import type { SpendData } from './api'
@@ -26,49 +25,32 @@ export class ScoutSidebarProvider implements vscode.WebviewViewProvider {
     _token: vscode.CancellationToken,
   ): void {
     this._view = webviewView
-
     webviewView.webview.options = {
       enableScripts: true,
       localResourceRoots: [this._context.extensionUri],
     }
-
     webviewView.webview.html = this._getHtml(webviewView.webview)
 
-    // Handle messages from the webview
     webviewView.webview.onDidReceiveMessage((msg: { type: string }) => {
       switch (msg.type) {
-        case 'connect':
-          vscode.commands.executeCommand('scout.connect')
-          break
-        case 'openTryTokka':
-          vscode.env.openExternal(vscode.Uri.parse('https://trytokka.com/signup?ref=vscode'))
-          break
-        case 'openDashboard':
-          vscode.env.openExternal(vscode.Uri.parse('https://trytokka.com/dashboard'))
-          break
-        case 'openPricing':
-          vscode.env.openExternal(vscode.Uri.parse('https://trytokka.com/pricing?ref=vscode'))
-          break
-        case 'refresh':
-          vscode.commands.executeCommand('scout.refresh')
-          break
+        case 'connect':      vscode.commands.executeCommand('scout.connect'); break
+        case 'openSignup':   vscode.env.openExternal(vscode.Uri.parse('https://trytokka.com/signup?ref=vscode')); break
+        case 'openDashboard':vscode.env.openExternal(vscode.Uri.parse('https://trytokka.com/dashboard')); break
+        case 'openPricing':  vscode.env.openExternal(vscode.Uri.parse('https://trytokka.com/pricing?ref=vscode')); break
+        case 'refresh':      vscode.commands.executeCommand('scout.refresh'); break
       }
     })
 
-    // Push current state if we already have data
     if (this._lastData && this._lastState) {
       this._pushUpdate(this._lastData, this._lastState, this._connected)
     }
   }
 
-  /** Called by extension.ts after each successful fetch. */
   update(data: SpendData, state: PsychState, connected: boolean): void {
-    this._lastData    = data
-    this._lastState   = state
-    this._connected   = connected
-    if (this._view) {
-      this._pushUpdate(data, state, connected)
-    }
+    this._lastData  = data
+    this._lastState = state
+    this._connected = connected
+    if (this._view) this._pushUpdate(data, state, connected)
   }
 
   showDisconnected(): void {
@@ -78,7 +60,7 @@ export class ScoutSidebarProvider implements vscode.WebviewViewProvider {
   }
 
   private _pushUpdate(data: SpendData, state: PsychState, connected: boolean): void {
-    const now = new Date()
+    const now         = new Date()
     const daysInMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate()
     const dayOfMonth  = now.getDate()
 
@@ -86,279 +68,390 @@ export class ScoutSidebarProvider implements vscode.WebviewViewProvider {
       type: 'update',
       connected,
       data: {
-        monthCost:     data.monthCost,
-        todayCost:     data.todayCost ?? 0,
-        totalCost:     data.totalCost,
-        topProvider:   data.topProvider,
-        alertStatus:   data.alertStatus,
-        lastUpdated:   data.lastUpdated,
-        // formatted strings (psychology-framed)
-        monthCostFmt:  formatUsd(data.monthCost),
-        todayCostFmt:  formatUsd(data.todayCost ?? 0),
-        // projected
-        projected:     formatUsd((data.monthCost / dayOfMonth) * daysInMonth),
-        daysLeft:      daysInMonth - dayOfMonth,
-        pctOfMonth:    Math.round((dayOfMonth / daysInMonth) * 100),
+        monthCostFmt: formatUsd(data.monthCost),
+        todayCostFmt: formatUsd(data.todayCost ?? 0),
+        projected:    formatUsd((data.monthCost / dayOfMonth) * daysInMonth),
+        daysLeft:     daysInMonth - dayOfMonth,
+        pctOfMonth:   Math.round((dayOfMonth / daysInMonth) * 100),
+        topProvider:  data.topProvider,
+        alertStatus:  data.alertStatus,
+        lastUpdated:  data.lastUpdated,
       },
       psych: {
-        spendPhrase:  state.spendPhrase,
-        subPhrase:    state.subPhrase,
-        isSpike:      state.isSpike,
-        showCta:      state.showCta,
-        ctaUrgency:   state.ctaUrgency,
-        ctaReason:    state.ctaReason,
-        color:        state.statusColor,
-        isMonthEnd:   state.isMonthEnd,
-        days:         state.daysSinceInstall,
+        spendPhrase: state.spendPhrase,
+        subPhrase:   state.subPhrase,
+        isSpike:     state.isSpike,
+        showCta:     state.showCta,
+        ctaUrgency:  state.ctaUrgency,
+        ctaReason:   state.ctaReason,
+        color:       state.statusColor,
+        isMonthEnd:  state.isMonthEnd,
+        days:        state.daysSinceInstall,
       },
     })
   }
 
   private _getHtml(webview: vscode.Webview): string {
     const nonce = getNonce()
-    const csp = `default-src 'none'; style-src 'nonce-${nonce}'; script-src 'nonce-${nonce}'; img-src data:;`
+    const csp = `default-src 'none'; style-src 'nonce-${nonce}'; script-src 'nonce-${nonce}'; img-src data: https:;`
 
     return /* html */`<!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width,initial-scale=1">
-  <meta http-equiv="Content-Security-Policy" content="${csp}">
-  <title>Scout — AI Spend</title>
-  <style nonce="${nonce}">
-    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="${csp}">
+<title>Scout</title>
+<style nonce="${nonce}">
+/* ── TryTokka design tokens (dark theme) ──────────────────────────────── */
+:root {
+  --canvas:         #080C0B;
+  --surface:        #0F1512;
+  --surface-2:      #161F1B;
+  --rim:            #24302A;
+  --rim-2:          #2F3D36;
+  --text:           #ECF5F0;
+  --text-muted:     #8FA89A;
+  --text-faint:     #5C7168;
+  --brand:          #34E89A;
+  --brand-dark:     #22C55E;
+  --brand-hover:    #5AF0A8;
+  --on-brand:       #042014;
+  --scout-green:    #4ADE80;
+  --scout-amber:    #FBBF24;
+  --scout-deep:     #FB7185;
+  --highlight:      rgba(255,255,255,0.06);
+  --shadow-soft:    0 1px 2px rgba(0,0,0,0.24), 0 4px 16px rgba(0,0,0,0.18);
+  --shadow-lift:    0 4px 10px rgba(0,0,0,0.42), 0 14px 36px rgba(0,0,0,0.38), 0 0 0 1px rgba(255,255,255,0.05);
+  --shadow-glow:    0 0 0 1px rgba(52,232,154,0.32), 0 8px 32px rgba(52,232,154,0.24);
+  --radius-sm:      10px;
+  --radius-md:      14px;
+  --radius-lg:      18px;
+  --radius-xl:      22px;
+  --radius-pill:    9999px;
+  --ease-spring:    cubic-bezier(0.34,1.45,0.64,1);
+  --ease-out:       cubic-bezier(0.05,0.7,0.1,1);
+  --dur-fast:       0.18s;
+  --dur-normal:     0.32s;
+}
 
-    :root {
-      --green:   #34E89A;
-      --amber:   #FB923C;
-      --red:     #FB7185;
-      --surface: var(--vscode-sideBar-background, #0F1512);
-      --border:  var(--vscode-widget-border, #24302A);
-      --text:    var(--vscode-foreground, #ECF5F0);
-      --muted:   var(--vscode-descriptionForeground, #9C8A6E);
-      --faint:   var(--vscode-disabledForeground, #6B5B47);
-      --input:   var(--vscode-input-background, #1C2420);
-      --btn-bg:  var(--vscode-button-background, #34E89A);
-      --btn-fg:  var(--vscode-button-foreground, #080C0B);
-      --btn-hover: var(--vscode-button-hoverBackground, #2DD480);
-      --radius:  10px;
-      --radius-sm: 6px;
-    }
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
-    body {
-      font-family: var(--vscode-font-family, system-ui, sans-serif);
-      font-size: var(--vscode-font-size, 13px);
-      background: var(--surface);
-      color: var(--text);
-      padding: 12px;
-      min-height: 100vh;
-    }
+body {
+  font-family: 'DM Sans', system-ui, -apple-system, sans-serif;
+  font-size: 13px;
+  line-height: 1.55;
+  -webkit-font-smoothing: antialiased;
+  background: var(--canvas);
+  color: var(--text);
+  padding: 12px;
+  min-height: 100vh;
+}
 
-    /* ── Disconnected state ─────────────────────────────── */
-    #disconnected { display: flex; flex-direction: column; gap: 12px; }
-    #connected    { display: none; flex-direction: column; gap: 12px; }
+/* ── Layout ─────────────────────────────────────────────────────────── */
+#view-disconnected { display: flex;  flex-direction: column; gap: 10px; }
+#view-connected    { display: none;  flex-direction: column; gap: 10px; }
 
-    /* ── Header ─────────────────────────────────────────── */
-    .header {
-      display: flex; align-items: center; justify-content: space-between;
-      margin-bottom: 4px;
-    }
-    .brand { display: flex; align-items: center; gap: 6px; }
-    .brand-gecko { font-size: 18px; }
-    .brand-name { font-size: 11px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--green); }
-    .refresh-btn {
-      background: none; border: none; color: var(--muted); cursor: pointer;
-      font-size: 14px; padding: 2px 4px; border-radius: 4px; line-height: 1;
-    }
-    .refresh-btn:hover { color: var(--text); background: rgba(255,255,255,.06); }
+/* ── Surface card — matches .surface-card in globals.css ─────────────── */
+.card {
+  border-radius: var(--radius-xl);
+  background: var(--surface);
+  border: 1px solid var(--rim);
+  box-shadow: var(--shadow-soft);
+  background-image: linear-gradient(180deg, var(--highlight) 0%, transparent 45%);
+  padding: 14px 16px;
+}
+.card.warning { border-color: rgba(251,191,36,0.35);  background-image: linear-gradient(180deg, rgba(251,191,36,0.06) 0%, transparent 60%); }
+.card.danger  { border-color: rgba(251,113,133,0.4);  background-image: linear-gradient(180deg, rgba(251,113,133,0.07) 0%, transparent 60%); }
+.card.brand   { border-color: rgba(52,232,154,0.25);  background-image: linear-gradient(180deg, rgba(52,232,154,0.07) 0%, transparent 60%); }
 
-    /* ── Main spend number ───────────────────────────────── */
-    .spend-card {
-      background: rgba(52,232,154,.06);
-      border: 1px solid rgba(52,232,154,.18);
-      border-radius: var(--radius);
-      padding: 14px 14px 12px;
-    }
-    .spend-card.warning { border-color: rgba(251,146,60,.35); background: rgba(251,146,60,.06); }
-    .spend-card.danger  { border-color: rgba(251,113,133,.35); background: rgba(251,113,133,.06); }
+/* ── Primary button — matches .btn-primary in globals.css ────────────── */
+.btn-primary {
+  display: flex; align-items: center; justify-content: center; gap: 6px;
+  width: 100%; padding: 10px 16px;
+  border-radius: var(--radius-pill);
+  border: none; cursor: pointer;
+  font-family: inherit; font-size: 13px; font-weight: 600; line-height: 1;
+  color: var(--on-brand);
+  background: linear-gradient(180deg,
+    color-mix(in srgb, var(--brand) 92%, white) 0%,
+    var(--brand) 48%,
+    var(--brand-dark) 100%);
+  box-shadow: 0 1px 0 rgba(255,255,255,0.18) inset, var(--shadow-soft);
+  transition: transform var(--dur-fast) var(--ease-spring), box-shadow var(--dur-normal) var(--ease-out), filter var(--dur-fast) ease;
+}
+.btn-primary:hover  { transform: translateY(-2px); box-shadow: var(--shadow-glow); filter: brightness(1.03); }
+.btn-primary:active { transform: translateY(0) scale(0.98); filter: brightness(0.97); }
 
-    .spend-phrase {
-      font-size: 11px; font-weight: 600; text-transform: uppercase;
-      letter-spacing: .06em; color: var(--muted); margin-bottom: 6px;
-    }
-    .spend-big {
-      font-size: 32px; font-weight: 800; letter-spacing: -.02em;
-      color: var(--green); line-height: 1; margin-bottom: 4px;
-    }
-    .spend-card.warning .spend-big { color: var(--amber); }
-    .spend-card.danger  .spend-big { color: var(--red); }
-    .spend-sub { font-size: 11px; color: var(--muted); line-height: 1.5; }
+/* ── Secondary button — matches .btn-secondary ───────────────────────── */
+.btn-secondary {
+  display: flex; align-items: center; justify-content: center; gap: 6px;
+  width: 100%; padding: 9px 16px;
+  border-radius: var(--radius-pill);
+  border: 1px solid var(--rim); cursor: pointer;
+  font-family: inherit; font-size: 13px; font-weight: 600; line-height: 1;
+  color: var(--text);
+  background: var(--surface);
+  background-image: linear-gradient(180deg, var(--highlight) 0%, transparent 50%);
+  box-shadow: var(--shadow-soft);
+  transition: transform var(--dur-fast) var(--ease-spring), border-color var(--dur-fast) ease, box-shadow var(--dur-normal) var(--ease-out);
+}
+.btn-secondary:hover  { transform: translateY(-1px); border-color: #3A5246; box-shadow: var(--shadow-lift); }
+.btn-secondary:active { transform: scale(0.98); }
 
-    /* ── Spike banner ────────────────────────────────────── */
-    .spike-banner {
-      display: none;
-      background: rgba(251,113,133,.1);
-      border: 1px solid rgba(251,113,133,.3);
-      border-radius: var(--radius-sm);
-      padding: 10px 12px;
-      font-size: 12px; line-height: 1.5;
-    }
-    .spike-banner.show { display: block; }
-    .spike-label { font-weight: 700; color: var(--red); margin-bottom: 2px; }
+/* ── Header ──────────────────────────────────────────────────────────── */
+.header {
+  display: flex; align-items: center; justify-content: space-between;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--rim);
+  margin-bottom: 2px;
+}
+.brand-row    { display: flex; align-items: center; gap: 8px; }
+.brand-gecko  { font-size: 20px; line-height: 1; }
+.brand-name   {
+  font-size: 11px; font-weight: 700; letter-spacing: 0.08em;
+  text-transform: uppercase; color: var(--brand);
+}
+.header-actions { display: flex; gap: 4px; }
+.icon-btn {
+  background: none; border: none; cursor: pointer;
+  color: var(--text-faint); font-size: 14px;
+  padding: 3px 5px; border-radius: 6px; line-height: 1;
+  transition: color var(--dur-fast) ease, background var(--dur-fast) ease;
+}
+.icon-btn:hover { color: var(--text); background: rgba(255,255,255,0.06); }
 
-    /* ── Stats row ───────────────────────────────────────── */
-    .stats-row {
-      display: grid; grid-template-columns: 1fr 1fr; gap: 8px;
-    }
-    .stat-box {
-      background: rgba(255,255,255,.04);
-      border: 1px solid var(--border);
-      border-radius: var(--radius-sm);
-      padding: 10px;
-    }
-    .stat-label { font-size: 10px; color: var(--faint); text-transform: uppercase; letter-spacing: .06em; margin-bottom: 4px; }
-    .stat-value { font-size: 16px; font-weight: 700; color: var(--text); }
-    .stat-value.green { color: var(--green); }
+/* ── Spend card — the psychological anchor ───────────────────────────── */
+.spend-label {
+  font-size: 10px; font-weight: 700; letter-spacing: 0.08em;
+  text-transform: uppercase; color: var(--text-faint);
+  margin-bottom: 6px;
+}
+.spend-amount {
+  font-size: 34px; font-weight: 800;
+  letter-spacing: -0.02em; line-height: 1;
+  color: var(--brand);
+  margin-bottom: 4px;
+}
+.card.warning .spend-amount { color: var(--scout-amber); }
+.card.danger  .spend-amount { color: var(--scout-deep); }
 
-    /* ── Provider badge ──────────────────────────────────── */
-    .provider-row {
-      display: flex; align-items: center; gap: 8px;
-      background: rgba(255,255,255,.04);
-      border: 1px solid var(--border);
-      border-radius: var(--radius-sm);
-      padding: 10px 12px;
-    }
-    .provider-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--green); flex-shrink: 0; }
-    .provider-label { font-size: 11px; color: var(--muted); }
-    .provider-name { font-size: 12px; font-weight: 600; color: var(--text); }
+.spend-sub {
+  font-size: 12px; color: var(--text-muted); line-height: 1.55;
+}
 
-    /* ── Progress bar ────────────────────────────────────── */
-    .progress-wrap { }
-    .progress-label { display: flex; justify-content: space-between; font-size: 10px; color: var(--faint); margin-bottom: 5px; }
-    .progress-track {
-      height: 4px; background: var(--border); border-radius: 2px; overflow: hidden;
-    }
-    .progress-fill {
-      height: 100%; border-radius: 2px; background: var(--green);
-      transition: width .4s ease;
-    }
-    .progress-fill.warning { background: var(--amber); }
-    .progress-fill.danger  { background: var(--red); }
+/* ── Spike banner ────────────────────────────────────────────────────── */
+.spike-banner {
+  display: none;
+  border-radius: var(--radius-md);
+  border: 1px solid rgba(251,113,133,0.35);
+  background: linear-gradient(180deg, rgba(251,113,133,0.08) 0%, transparent 70%);
+  padding: 10px 14px;
+}
+.spike-banner.show { display: block; }
+.spike-title { font-size: 12px; font-weight: 700; color: var(--scout-deep); margin-bottom: 3px; }
+.spike-body  { font-size: 11px; color: var(--text-muted); line-height: 1.5; }
 
-    /* ── CTA ─────────────────────────────────────────────── */
-    .cta-card {
-      background: rgba(52,232,154,.08);
-      border: 1px solid rgba(52,232,154,.25);
-      border-radius: var(--radius);
-      padding: 12px;
-    }
-    .cta-card.high { border-color: rgba(251,113,133,.4); background: rgba(251,113,133,.06); }
-    .cta-reason { font-size: 11px; color: var(--muted); margin-bottom: 8px; line-height: 1.5; }
-    .cta-btn {
-      display: block; width: 100%; padding: 9px 12px;
-      background: var(--green); color: #080C0B;
-      border: none; border-radius: var(--radius-sm);
-      font-size: 12px; font-weight: 700; cursor: pointer; text-align: center;
-      line-height: 1;
-    }
-    .cta-btn:hover { background: var(--btn-hover); }
-    .cta-btn.secondary {
-      background: transparent;
-      border: 1px solid rgba(52,232,154,.35);
-      color: var(--green);
-      margin-top: 6px;
-    }
-    .cta-btn.secondary:hover { background: rgba(52,232,154,.1); }
+/* ── Stats grid ──────────────────────────────────────────────────────── */
+.stats-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.stat {
+  border-radius: var(--radius-md);
+  border: 1px solid var(--rim);
+  background: var(--surface-2);
+  padding: 10px 12px;
+}
+.stat-label { font-size: 10px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--text-faint); margin-bottom: 4px; }
+.stat-value { font-size: 18px; font-weight: 700; color: var(--text); }
 
-    /* ── Connect state ───────────────────────────────────── */
-    .connect-hero { text-align: center; padding: 24px 8px 16px; }
-    .connect-gecko { font-size: 42px; margin-bottom: 10px; }
-    .connect-title { font-size: 14px; font-weight: 700; color: var(--text); margin-bottom: 6px; }
-    .connect-sub   { font-size: 12px; color: var(--muted); line-height: 1.6; margin-bottom: 16px; }
-    .connect-steps { text-align: left; background: rgba(255,255,255,.04); border: 1px solid var(--border); border-radius: var(--radius); padding: 12px; margin-bottom: 12px; }
-    .connect-step  { font-size: 11px; color: var(--muted); padding: 3px 0; display: flex; gap: 8px; }
-    .step-num { color: var(--green); font-weight: 700; flex-shrink: 0; }
+/* ── Progress bar ────────────────────────────────────────────────────── */
+.progress-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; }
+.progress-label  { font-size: 11px; color: var(--text-muted); }
+.progress-days   { font-size: 11px; color: var(--text-faint); }
+.progress-track  { height: 4px; border-radius: 2px; background: var(--rim); overflow: hidden; }
+.progress-fill   {
+  height: 100%; border-radius: 2px;
+  background: linear-gradient(90deg, var(--brand-dark), var(--brand));
+  transition: width 0.6s var(--ease-out);
+}
+.progress-fill.warning { background: linear-gradient(90deg, #D97706, var(--scout-amber)); }
+.progress-fill.danger  { background: linear-gradient(90deg, #BE123C, var(--scout-deep)); }
 
-    /* ── Footer ─────────────────────────────────────────────*/
-    .footer { font-size: 10px; color: var(--faint); text-align: center; padding-top: 4px; }
-    .footer a { color: var(--faint); text-decoration: none; }
-    .footer a:hover { color: var(--muted); }
-    .updated { font-size: 10px; color: var(--faint); text-align: right; margin-top: 2px; }
-  </style>
+/* ── Provider row ────────────────────────────────────────────────────── */
+.provider-row {
+  display: none;
+  align-items: center; gap: 10px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--rim);
+  background: var(--surface-2);
+  padding: 10px 12px;
+}
+.provider-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--brand); flex-shrink: 0; }
+.provider-meta { }
+.provider-meta-label { font-size: 10px; color: var(--text-faint); text-transform: uppercase; letter-spacing: 0.06em; }
+.provider-meta-name  { font-size: 12px; font-weight: 600; color: var(--text); }
+
+/* ── CTA card ────────────────────────────────────────────────────────── */
+.cta-card { display: none; flex-direction: column; gap: 8px; }
+.cta-card.show { display: flex; }
+.cta-reason { font-size: 12px; color: var(--text-muted); line-height: 1.6; padding: 0 2px; }
+
+/* ── Scout status badge (safe/warning/critical) ──────────────────────── */
+.status-badge {
+  display: inline-flex; align-items: center; gap: 5px;
+  padding: 3px 9px; border-radius: var(--radius-pill);
+  font-size: 11px; font-weight: 600; letter-spacing: 0.03em;
+  width: fit-content;
+}
+.status-badge.safe    { background: rgba(74,222,128,0.12); color: var(--scout-green); border: 1px solid rgba(74,222,128,0.25); }
+.status-badge.warning { background: rgba(251,191,36,0.12); color: var(--scout-amber); border: 1px solid rgba(251,191,36,0.25); }
+.status-badge.danger  { background: rgba(251,113,133,0.12); color: var(--scout-deep); border: 1px solid rgba(251,113,133,0.25); }
+.badge-dot { width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+
+/* ── Connect screen ──────────────────────────────────────────────────── */
+.connect-hero { text-align: center; padding: 20px 8px 8px; }
+.connect-gecko { font-size: 44px; margin-bottom: 10px; line-height: 1; }
+.connect-title { font-size: 15px; font-weight: 700; color: var(--text); margin-bottom: 6px; }
+.connect-sub   { font-size: 12px; color: var(--text-muted); line-height: 1.6; margin-bottom: 16px; }
+
+.connect-steps {
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--rim);
+  background: var(--surface);
+  background-image: linear-gradient(180deg, var(--highlight) 0%, transparent 45%);
+  box-shadow: var(--shadow-soft);
+  padding: 12px 14px;
+  margin-bottom: 10px;
+  display: flex; flex-direction: column; gap: 8px;
+}
+.step { display: flex; gap: 10px; align-items: flex-start; }
+.step-num {
+  font-size: 11px; font-weight: 700; color: var(--on-brand);
+  background: var(--brand-dark);
+  width: 18px; height: 18px; border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  flex-shrink: 0; margin-top: 1px;
+}
+.step-text { font-size: 12px; color: var(--text-muted); line-height: 1.5; }
+
+/* ── Footer ──────────────────────────────────────────────────────────── */
+.footer {
+  font-size: 10px; color: var(--text-faint);
+  text-align: center; padding-top: 4px;
+  display: flex; align-items: center; justify-content: center; gap: 6px;
+}
+.footer a { color: var(--text-faint); text-decoration: none; cursor: pointer; }
+.footer a:hover { color: var(--text-muted); }
+.footer-sep { color: var(--rim-2); }
+.updated { font-size: 10px; color: var(--text-faint); text-align: right; }
+
+/* ── Divider ─────────────────────────────────────────────────────────── */
+.divider { height: 1px; background: var(--rim); }
+
+/* ── Scrollbar ───────────────────────────────────────────────────────── */
+::-webkit-scrollbar       { width: 4px; }
+::-webkit-scrollbar-track { background: var(--surface); }
+::-webkit-scrollbar-thumb { background: var(--rim-2); border-radius: 2px; }
+::-webkit-scrollbar-thumb:hover { background: #3D5248; }
+</style>
 </head>
 <body>
 
-<!-- ── DISCONNECTED STATE ───────────────────────────────────────────────── -->
-<div id="disconnected">
+<!-- ───────────── DISCONNECTED ──────────────────────────────────────────── -->
+<div id="view-disconnected">
   <div class="connect-hero">
     <div class="connect-gecko">🦎</div>
-    <div class="connect-title">Scout watches your AI spend</div>
+    <div class="connect-title">Scout AI Spend Tracker</div>
     <div class="connect-sub">
-      See exactly what OpenAI, Anthropic, Gemini, and Cursor<br>
-      are costing you — right here, every time you code.
+      See exactly what OpenAI, Anthropic, Gemini,<br>
+      and Cursor are costing you — every time you code.
     </div>
   </div>
 
   <div class="connect-steps">
-    <div class="connect-step"><span class="step-num">1</span> Create a free TryTokka account (2 min, no card)</div>
-    <div class="connect-step"><span class="step-num">2</span> Connect your AI providers with a read-only key</div>
-    <div class="connect-step"><span class="step-num">3</span> Copy your Widget Token from Settings → Apps</div>
-    <div class="connect-step"><span class="step-num">4</span> Paste it here — Scout starts tracking instantly</div>
+    <div class="step">
+      <div class="step-num">1</div>
+      <div class="step-text">Create a free TryTokka account — 7-day trial, no card needed</div>
+    </div>
+    <div class="step">
+      <div class="step-num">2</div>
+      <div class="step-text">Connect AI providers with a read-only key</div>
+    </div>
+    <div class="step">
+      <div class="step-num">3</div>
+      <div class="step-text">Copy your Widget Token from Settings → Apps</div>
+    </div>
+    <div class="step">
+      <div class="step-num">4</div>
+      <div class="step-text">Paste it here — Scout starts watching instantly</div>
+    </div>
   </div>
 
-  <button class="cta-btn" onclick="send('openTryTokka')">
+  <button class="btn-primary" onclick="send('openSignup')">
     Start free — trytokka.com →
   </button>
-  <button class="cta-btn secondary" onclick="send('connect')" style="margin-top:8px">
-    I have a token — connect now
+  <button class="btn-secondary" onclick="send('connect')">
+    I have a token — connect
   </button>
 
   <div class="footer">
-    No proxy · No code changes · No credit card
+    <span>No proxy</span>
+    <span class="footer-sep">·</span>
+    <span>No code changes</span>
+    <span class="footer-sep">·</span>
+    <span>No card</span>
   </div>
 </div>
 
-<!-- ── CONNECTED STATE ──────────────────────────────────────────────────── -->
-<div id="connected">
+<!-- ───────────── CONNECTED ─────────────────────────────────────────────── -->
+<div id="view-connected">
 
+  <!-- Header -->
   <div class="header">
-    <div class="brand">
+    <div class="brand-row">
       <span class="brand-gecko">🦎</span>
       <span class="brand-name">Scout</span>
     </div>
-    <button class="refresh-btn" onclick="send('refresh')" title="Refresh now">↻</button>
+    <div class="header-actions">
+      <button class="icon-btn" onclick="send('refresh')" title="Refresh now">↻</button>
+    </div>
   </div>
 
-  <!-- Main spend number — the psychological anchor -->
-  <div class="spend-card" id="spendCard">
-    <div class="spend-phrase" id="spendPhrase">THIS MONTH</div>
-    <div class="spend-big" id="monthCost">$0.00</div>
-    <div class="spend-sub" id="subPhrase">Loading…</div>
+  <!-- Spend card — psychological anchor (big number first) -->
+  <div class="card" id="spendCard">
+    <div class="spend-label" id="spendLabel">THIS MONTH</div>
+    <div class="spend-amount" id="monthCost">—</div>
+    <div class="spend-sub" id="spendSub">Loading…</div>
   </div>
 
-  <!-- Spike banner — Variable Reward trigger -->
+  <!-- Alert status badge -->
+  <div class="status-badge safe" id="statusBadge">
+    <div class="badge-dot"></div>
+    <span id="statusText">Safe</span>
+  </div>
+
+  <!-- Spike banner -->
   <div class="spike-banner" id="spikeBanner">
-    <div class="spike-label">⚠ Spend spike detected</div>
-    <div id="spikeText">Your AI spend just jumped. Check what ran.</div>
+    <div class="spike-title">⚠ Spend spike detected</div>
+    <div class="spike-body" id="spikeBody">Your AI spend jumped since the last check. Open the dashboard to investigate.</div>
   </div>
 
-  <!-- Stats row -->
-  <div class="stats-row">
-    <div class="stat-box">
+  <!-- Stats -->
+  <div class="stats-grid">
+    <div class="stat">
       <div class="stat-label">Today</div>
       <div class="stat-value" id="todayCost">—</div>
     </div>
-    <div class="stat-box">
+    <div class="stat">
       <div class="stat-label">Projected</div>
       <div class="stat-value" id="projected">—</div>
     </div>
   </div>
 
   <!-- Month progress -->
-  <div class="progress-wrap">
-    <div class="progress-label">
-      <span id="progressLabel">Month progress</span>
-      <span id="daysLeft">— days left</span>
+  <div>
+    <div class="progress-header">
+      <span class="progress-label" id="progressLabel">Month progress</span>
+      <span class="progress-days" id="daysLeft">—</span>
     </div>
     <div class="progress-track">
       <div class="progress-fill" id="progressFill" style="width:0%"></div>
@@ -366,21 +459,23 @@ export class ScoutSidebarProvider implements vscode.WebviewViewProvider {
   </div>
 
   <!-- Top provider -->
-  <div class="provider-row" id="providerRow" style="display:none">
+  <div class="provider-row" id="providerRow">
     <div class="provider-dot"></div>
-    <div>
-      <div class="provider-label">Top provider</div>
-      <div class="provider-name" id="topProvider">—</div>
+    <div class="provider-meta">
+      <div class="provider-meta-label">Top provider</div>
+      <div class="provider-meta-name" id="topProvider">—</div>
     </div>
   </div>
 
-  <!-- CTA — conversion prompt (shown based on psychology engine timing) -->
-  <div class="cta-card" id="ctaCard" style="display:none">
+  <div class="divider"></div>
+
+  <!-- CTA — psychology-timed, max 3 shows -->
+  <div class="cta-card" id="ctaCard">
     <div class="cta-reason" id="ctaReason"></div>
-    <button class="cta-btn" onclick="send('openDashboard')">
+    <button class="btn-primary" onclick="send('openDashboard')">
       Open Scout dashboard →
     </button>
-    <button class="cta-btn secondary" onclick="send('openPricing')">
+    <button class="btn-secondary" onclick="send('openPricing')">
       Add alerts + model optimizer
     </button>
   </div>
@@ -388,95 +483,86 @@ export class ScoutSidebarProvider implements vscode.WebviewViewProvider {
   <div class="updated" id="lastUpdated"></div>
 
   <div class="footer">
-    <a href="#" onclick="send('openDashboard')">trytokka.com</a>
-    &nbsp;·&nbsp;
-    <a href="#" onclick="send('openTryTokka')">Upgrade</a>
+    <a onclick="send('openDashboard')">trytokka.com</a>
+    <span class="footer-sep">·</span>
+    <a onclick="send('openSignup')">Upgrade</a>
   </div>
+
 </div>
 
 <script nonce="${nonce}">
-  const vscode = acquireVsCodeApi()
+const vscode = acquireVsCodeApi()
+function send(type) { vscode.postMessage({ type }) }
 
-  function send(type) {
-    vscode.postMessage({ type })
+const STATUS_LABELS = { safe: 'On track', warning: 'Approaching limit', critical: 'Limit crossed' }
+const STATUS_CLASS  = { safe: 'safe', warning: 'warning', critical: 'danger' }
+
+window.addEventListener('message', ({ data: msg }) => {
+  if (msg.type === 'disconnected') { show('disconnected'); return }
+  if (msg.type === 'update') {
+    if (!msg.connected) { show('disconnected'); return }
+    render(msg.data, msg.psych)
+  }
+})
+
+function show(state) {
+  document.getElementById('view-disconnected').style.display = state === 'disconnected' ? 'flex' : 'none'
+  document.getElementById('view-connected').style.display    = state === 'connected'    ? 'flex' : 'none'
+}
+
+function render(data, psych) {
+  show('connected')
+
+  // Spend card
+  const card = document.getElementById('spendCard')
+  card.className = 'card ' + (psych.color === 'danger' ? 'danger' : psych.color === 'warning' ? 'warning' : 'brand')
+  document.getElementById('spendLabel').textContent  = psych.spendPhrase.toUpperCase()
+  document.getElementById('monthCost').textContent   = data.monthCostFmt
+  document.getElementById('spendSub').textContent    = psych.subPhrase
+
+  // Status badge
+  const badge = document.getElementById('statusBadge')
+  const cls   = STATUS_CLASS[data.alertStatus] ?? 'safe'
+  badge.className = 'status-badge ' + cls
+  document.getElementById('statusText').textContent = STATUS_LABELS[data.alertStatus] ?? 'On track'
+
+  // Spike banner
+  const spike = document.getElementById('spikeBanner')
+  spike.className = 'spike-banner' + (psych.isSpike ? ' show' : '')
+
+  // Stats
+  document.getElementById('todayCost').textContent = data.todayCostFmt
+  document.getElementById('projected').textContent  = data.projected
+
+  // Progress
+  document.getElementById('progressLabel').textContent = data.pctOfMonth + '% of month elapsed'
+  document.getElementById('daysLeft').textContent      = data.daysLeft + ' days left'
+  const fill = document.getElementById('progressFill')
+  fill.style.width = Math.min(data.pctOfMonth, 100) + '%'
+  fill.className   = 'progress-fill ' + (psych.color === 'danger' ? 'danger' : psych.color === 'warning' ? 'warning' : '')
+
+  // Top provider
+  const provRow = document.getElementById('providerRow')
+  if (data.topProvider) {
+    provRow.style.display = 'flex'
+    document.getElementById('topProvider').textContent =
+      data.topProvider.charAt(0).toUpperCase() + data.topProvider.slice(1) + ' is driving your spend'
+  } else {
+    provRow.style.display = 'none'
   }
 
-  window.addEventListener('message', ({ data: msg }) => {
-    if (msg.type === 'disconnected') {
-      showDisconnected()
-      return
-    }
-    if (msg.type === 'update') {
-      if (!msg.connected) { showDisconnected(); return }
-      showConnected(msg.data, msg.psych)
-    }
-  })
-
-  function showDisconnected() {
-    document.getElementById('disconnected').style.display = 'flex'
-    document.getElementById('connected').style.display    = 'none'
+  // CTA
+  const cta = document.getElementById('ctaCard')
+  cta.className = 'cta-card' + (psych.showCta ? ' show' : '')
+  if (psych.showCta) {
+    document.getElementById('ctaReason').textContent = psych.ctaReason +
+      '. Set an alert so Scout emails you before the bill arrives.'
   }
 
-  function showConnected(data, psych) {
-    document.getElementById('disconnected').style.display = 'none'
-    document.getElementById('connected').style.display    = 'flex'
-
-    // ── Spend card (the psychological anchor) ─────────────────────────────
-    const card = document.getElementById('spendCard')
-    card.className = 'spend-card ' + (psych.color === 'danger' ? 'danger' : psych.color === 'warning' ? 'warning' : '')
-
-    document.getElementById('spendPhrase').textContent = psych.spendPhrase.toUpperCase()
-    document.getElementById('monthCost').textContent   = data.monthCostFmt
-    document.getElementById('subPhrase').textContent   = psych.subPhrase
-
-    // ── Spike banner ──────────────────────────────────────────────────────
-    const spike = document.getElementById('spikeBanner')
-    spike.className = 'spike-banner' + (psych.isSpike ? ' show' : '')
-    if (psych.isSpike) {
-      document.getElementById('spikeText').textContent =
-        'Your spend jumped since the last check. Open the dashboard to see what ran.'
-    }
-
-    // ── Stats ─────────────────────────────────────────────────────────────
-    document.getElementById('todayCost').textContent = data.todayCostFmt
-    document.getElementById('projected').textContent = data.projected
-
-    // ── Progress bar ──────────────────────────────────────────────────────
-    document.getElementById('progressLabel').textContent =
-      data.pctOfMonth + '% through the month'
-    document.getElementById('daysLeft').textContent = data.daysLeft + ' days left'
-    const fill = document.getElementById('progressFill')
-    fill.style.width = Math.min(data.pctOfMonth, 100) + '%'
-    fill.className   = 'progress-fill ' + (psych.color === 'danger' ? 'danger' : psych.color === 'warning' ? 'warning' : '')
-
-    // ── Top provider ──────────────────────────────────────────────────────
-    const providerRow = document.getElementById('providerRow')
-    if (data.topProvider) {
-      providerRow.style.display = 'flex'
-      document.getElementById('topProvider').textContent =
-        data.topProvider.charAt(0).toUpperCase() + data.topProvider.slice(1) +
-        ' is your top AI spend this month'
-    } else {
-      providerRow.style.display = 'none'
-    }
-
-    // ── CTA (psychology engine decides if/what to show) ───────────────────
-    const ctaCard = document.getElementById('ctaCard')
-    if (psych.showCta) {
-      ctaCard.style.display = 'block'
-      ctaCard.className = 'cta-card' + (psych.ctaUrgency === 'high' ? ' high' : '')
-      document.getElementById('ctaReason').textContent = psych.ctaReason +
-        ' — set an alert threshold so Scout emails you before your limit.'
-    } else {
-      ctaCard.style.display = 'none'
-    }
-
-    // ── Last updated ──────────────────────────────────────────────────────
-    const updated = new Date(data.lastUpdated)
-    const mins = Math.round((Date.now() - updated.getTime()) / 60000)
-    document.getElementById('lastUpdated').textContent =
-      mins < 2 ? 'Updated just now' : 'Updated ' + mins + 'm ago'
-  }
+  // Last updated
+  const mins = Math.round((Date.now() - new Date(data.lastUpdated).getTime()) / 60000)
+  document.getElementById('lastUpdated').textContent = mins < 2 ? 'Updated just now' : 'Updated ' + mins + 'm ago'
+}
 </script>
 </body>
 </html>`
@@ -484,10 +570,8 @@ export class ScoutSidebarProvider implements vscode.WebviewViewProvider {
 }
 
 function getNonce(): string {
-  let text = ''
-  const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789'
-  for (let i = 0; i < 32; i++) {
-    text += chars.charAt(Math.floor(Math.random() * chars.length))
-  }
-  return text
+  let t = ''
+  const c = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789'
+  for (let i = 0; i < 32; i++) t += c[Math.floor(Math.random() * c.length)]
+  return t
 }
