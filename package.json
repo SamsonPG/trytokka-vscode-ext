@@ -1,0 +1,139 @@
+{
+  "name": "scout-ai-spend-tracker",
+  "displayName": "Scout — AI Spend Tracker",
+  "description": "See exactly what AI APIs are costing you, right in VS Code. No proxy. No code changes. Tracks OpenAI, Anthropic, Gemini, OpenRouter, Azure, Bedrock, Cursor in one number. By TryTokka.",
+  "version": "1.0.0",
+  "publisher": "trytokka",
+  "icon": "media/icon.png",
+  "galleryBanner": {
+    "color": "#080C0B",
+    "theme": "dark"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/SamsonPG/scout-vscode"
+  },
+  "homepage": "https://trytokka.com",
+  "bugs": {
+    "url": "https://github.com/SamsonPG/scout-vscode/issues",
+    "email": "support@trytokka.com"
+  },
+  "license": "MIT",
+  "engines": { "vscode": "^1.85.0" },
+  "categories": ["Other", "Visualization"],
+  "keywords": [
+    "AI cost tracker",
+    "OpenAI cost",
+    "Anthropic cost",
+    "Gemini cost",
+    "Cursor spend",
+    "API cost monitor",
+    "LLM cost",
+    "AI budget",
+    "token cost",
+    "AI spend",
+    "Claude cost",
+    "OpenRouter cost",
+    "AI API tracker",
+    "cost monitoring",
+    "TryTokka"
+  ],
+  "activationEvents": ["onStartupFinished"],
+  "main": "./out/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "scout.connect",
+        "title": "Scout: Connect TryTokka Account",
+        "icon": "$(plug)"
+      },
+      {
+        "command": "scout.disconnect",
+        "title": "Scout: Disconnect Account"
+      },
+      {
+        "command": "scout.refresh",
+        "title": "Scout: Refresh Now",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "scout.openPanel",
+        "title": "Scout: Open Spend Panel"
+      },
+      {
+        "command": "scout.openSignup",
+        "title": "Scout: Start Free — trytokka.com"
+      }
+    ],
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "scout-sidebar",
+          "title": "Scout — AI Spend",
+          "icon": "media/gecko.svg"
+        }
+      ]
+    },
+    "views": {
+      "scout-sidebar": [
+        {
+          "type": "webview",
+          "id": "scout.panel",
+          "name": "AI Spend"
+        }
+      ]
+    },
+    "configuration": {
+      "title": "Scout — AI Spend Tracker",
+      "properties": {
+        "scout.refreshIntervalMinutes": {
+          "type": "number",
+          "default": 30,
+          "minimum": 5,
+          "maximum": 120,
+          "description": "How often to refresh spend data (minutes)."
+        },
+        "scout.showInStatusBar": {
+          "type": "boolean",
+          "default": true,
+          "description": "Show AI spend in the VS Code status bar."
+        },
+        "scout.localAlertThresholdUsd": {
+          "type": "number",
+          "default": 0,
+          "minimum": 0,
+          "description": "Flash the status bar red when monthly spend exceeds this (0 = off). Set email alerts in TryTokka."
+        }
+      }
+    },
+    "menus": {
+      "view/title": [
+        {
+          "command": "scout.refresh",
+          "when": "view == scout.panel",
+          "group": "navigation"
+        },
+        {
+          "command": "scout.connect",
+          "when": "view == scout.panel",
+          "group": "navigation"
+        }
+      ]
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run compile",
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "package": "vsce package --allow-missing-repository",
+    "publish:vscode": "vsce publish",
+    "publish:ovsx": "ovsx publish"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "@types/vscode": "^1.85.0",
+    "@vscode/vsce": "^2.22.0",
+    "ovsx": "^0.8.4",
+    "typescript": "^5.3.0"
+  }
+}
