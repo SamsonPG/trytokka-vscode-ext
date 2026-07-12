@@ -1,0 +1,29 @@
+name: CI
+
+# Compile + package check on every push and PR so a broken build never
+# reaches a release tag.
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Type-check / compile
+        run: npm run compile
+
+      - name: Package (dry-run, verifies vsce can build the .vsix)
+        run: npx @vscode/vsce package --allow-missing-repository -o /tmp/trytokka-vscode-ext.vsix
