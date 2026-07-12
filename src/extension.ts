@@ -173,7 +173,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     vscode.commands.registerCommand('scout.refresh', refresh),
 
     vscode.commands.registerCommand('scout.openPanel', () => {
-      vscode.commands.executeCommand('scout-sidebar.focus')
+      vscode.commands.executeCommand('workbench.view.extension.scout-sidebar')
     }),
 
     vscode.commands.registerCommand('scout.openSignup', () => {
@@ -188,11 +188,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     }),
   )
 
-  if (refreshTimer) context.subscriptions.push({ dispose: () => clearInterval(refreshTimer!) })
-
   // ── Initial load ───────────────────────────────────────────────────────────
   await refresh()
   scheduleRefresh()
+  // Register disposal AFTER scheduleRefresh() so refreshTimer is defined.
+  context.subscriptions.push({ dispose: () => { if (refreshTimer) clearInterval(refreshTimer) } })
 }
 
 export function deactivate(): void { /* cleanup handled by subscriptions */ }

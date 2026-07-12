@@ -35,7 +35,6 @@ export async function fetchSpend(token: string): Promise<FetchResult> {
     const res = await fetch(`${API_BASE}/api/widget-summary`, {
       headers: {
         Authorization: `Bearer ${token}`,
-        'Content-Type': 'application/json',
       },
       signal: controller.signal,
     })
