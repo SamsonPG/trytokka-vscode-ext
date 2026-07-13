@@ -388,10 +388,10 @@ body {
     </div>
   </div>
 
-  <button class="btn-primary" onclick="send('openSignup')">
+  <button class="btn-primary" data-action="openSignup">
     Start free — trytokka.com →
   </button>
-  <button class="btn-secondary" onclick="send('connect')">
+  <button class="btn-secondary" data-action="connect">
     I have a token — connect
   </button>
 
@@ -414,7 +414,7 @@ body {
       <span class="brand-name">Scout</span>
     </div>
     <div class="header-actions">
-      <button class="icon-btn" onclick="send('refresh')" title="Refresh now">↻</button>
+      <button class="icon-btn" data-action="refresh" title="Refresh now">↻</button>
     </div>
   </div>
 
@@ -474,10 +474,10 @@ body {
   <!-- CTA — psychology-timed, max 3 shows -->
   <div class="cta-card" id="ctaCard">
     <div class="cta-reason" id="ctaReason"></div>
-    <button class="btn-primary" onclick="send('openDashboard')">
+    <button class="btn-primary" data-action="openDashboard">
       Open Scout dashboard →
     </button>
-    <button class="btn-secondary" onclick="send('openPricing')">
+    <button class="btn-secondary" data-action="openPricing">
       Add alerts + model optimizer
     </button>
   </div>
@@ -485,9 +485,9 @@ body {
   <div class="updated" id="lastUpdated"></div>
 
   <div class="footer">
-    <a onclick="send('openDashboard')">trytokka.com</a>
+    <a data-action="openDashboard">trytokka.com</a>
     <span class="footer-sep">·</span>
-    <a onclick="send('openSignup')">Upgrade</a>
+    <a data-action="openSignup">Upgrade</a>
   </div>
 
 </div>
@@ -495,6 +495,14 @@ body {
 <script nonce="${nonce}">
 const vscode = acquireVsCodeApi()
 function send(type) { vscode.postMessage({ type }) }
+
+// The webview CSP (script-src 'nonce-...') blocks inline onclick handlers —
+// they carry no nonce, so they silently never fire. Wire every clickable
+// [data-action] element here instead, via event delegation.
+document.addEventListener('click', (e) => {
+  const el = e.target.closest('[data-action]')
+  if (el) send(el.getAttribute('data-action'))
+})
 
 const STATUS_LABELS = { safe: 'On track', warning: 'Approaching limit', critical: 'Limit crossed' }
 const STATUS_CLASS  = { safe: 'safe', warning: 'warning', critical: 'danger' }
