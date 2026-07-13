@@ -207,7 +207,8 @@ body {
   margin-bottom: 2px;
 }
 .brand-row    { display: flex; align-items: center; gap: 8px; }
-.brand-gecko  { font-size: 20px; line-height: 1; }
+.brand-gecko  { line-height: 0; }
+.brand-gecko svg { width: 22px; height: 22px; display: block; }
 .brand-name   {
   font-size: 11px; font-weight: 700; letter-spacing: 0.08em;
   text-transform: uppercase; color: var(--brand);
@@ -309,7 +310,8 @@ body {
 
 /* ── Connect screen ──────────────────────────────────────────────────── */
 .connect-hero { text-align: center; padding: 20px 8px 8px; }
-.connect-gecko { font-size: 44px; margin-bottom: 10px; line-height: 1; }
+.connect-gecko { margin-bottom: 10px; line-height: 0; }
+.connect-gecko svg { width: 56px; height: 56px; display: inline-block; }
 .connect-title { font-size: 15px; font-weight: 700; color: var(--text); margin-bottom: 6px; }
 .connect-sub   { font-size: 12px; color: var(--text-muted); line-height: 1.6; margin-bottom: 16px; }
 
@@ -359,7 +361,7 @@ body {
 <!-- ───────────── DISCONNECTED ──────────────────────────────────────────── -->
 <div id="view-disconnected">
   <div class="connect-hero">
-    <div class="connect-gecko">🦎</div>
+    <div class="connect-gecko"><svg viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><path d="M22 48Q18 24 50 20Q80 22 82 46Q84 58 68 64Q50 69 34 63Q20 58 22 48Z" fill="#34D399"/><ellipse cx="50" cy="22" rx="9" ry="5.5" fill="#34D399"/><ellipse cx="35" cy="40" rx="13" ry="14" fill="#06251C"/><ellipse cx="65" cy="40" rx="13" ry="14" fill="#06251C"/><circle cx="35" cy="40" r="9.5" fill="#FACC15"/><circle cx="65" cy="40" r="9.5" fill="#FACC15"/><ellipse cx="35" cy="40" rx="3.4" ry="8.5" fill="#06251C"/><ellipse cx="65" cy="40" rx="3.4" ry="8.5" fill="#06251C"/><circle cx="31" cy="34" r="2.4" fill="#fff" opacity="0.95"/><circle cx="61" cy="34" r="2.4" fill="#fff" opacity="0.95"/><path d="M42 56Q50 61 58 56" stroke="#06251C" stroke-width="2.6" stroke-linecap="round" fill="none" opacity="0.6"/></svg></div>
     <div class="connect-title">Scout AI Spend Tracker</div>
     <div class="connect-sub">
       See exactly what OpenAI, Anthropic, Gemini,<br>
@@ -408,7 +410,7 @@ body {
   <!-- Header -->
   <div class="header">
     <div class="brand-row">
-      <span class="brand-gecko">🦎</span>
+      <span class="brand-gecko"><svg viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><path d="M22 48Q18 24 50 20Q80 22 82 46Q84 58 68 64Q50 69 34 63Q20 58 22 48Z" fill="#34D399"/><ellipse cx="50" cy="22" rx="9" ry="5.5" fill="#34D399"/><ellipse cx="35" cy="40" rx="13" ry="14" fill="#06251C"/><ellipse cx="65" cy="40" rx="13" ry="14" fill="#06251C"/><circle cx="35" cy="40" r="9.5" fill="#FACC15"/><circle cx="65" cy="40" r="9.5" fill="#FACC15"/><ellipse cx="35" cy="40" rx="3.4" ry="8.5" fill="#06251C"/><ellipse cx="65" cy="40" rx="3.4" ry="8.5" fill="#06251C"/><circle cx="31" cy="34" r="2.4" fill="#fff" opacity="0.95"/><circle cx="61" cy="34" r="2.4" fill="#fff" opacity="0.95"/><path d="M42 56Q50 61 58 56" stroke="#06251C" stroke-width="2.6" stroke-linecap="round" fill="none" opacity="0.6"/></svg></span>
       <span class="brand-name">Scout</span>
     </div>
     <div class="header-actions">

@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.0.1 — 2026-07-13
+
+- Brand polish: the panel logo now uses the real Scout gecko mascot (was a
+  generic 🦎 emoji), matching the Marketplace icon.
+- Fixed the Activity Bar icon — now a clean monochrome gecko silhouette
+  instead of a solid square (VS Code renders activity-bar icons single-colour).
+
 ## 1.0.0 — 2026-07-08
 
 Initial release.
