@@ -2,7 +2,7 @@
   "name": "scout-ai-spend-tracker",
   "displayName": "Scout — AI Spend Tracker",
   "description": "See exactly what AI APIs are costing you, right in VS Code. No proxy. No code changes. Tracks OpenAI, Anthropic, Gemini, OpenRouter, Azure, Bedrock, Cursor in one number. By TryTokka.",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "publisher": "trytokka",
   "icon": "media/icon.png",
   "galleryBanner": {

@@ -1,6 +1,9 @@
 # Changelog
 
-## 1.0.1 — 2026-07-13
+## 1.0.2 — 2026-07-13
+
+Bundles all the 1.0.1 fixes under a fresh version (the Marketplace doesn't
+allow re-uploading a version number), guaranteeing every fix below ships.
 
 - **Fixed: panel buttons/links did nothing.** The webview's Content-Security-
   Policy (script-src nonce) blocked inline onclick handlers, so "Start free",
