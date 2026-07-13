@@ -103,6 +103,14 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     refreshTimer = setInterval(refresh, ms)
   }
 
+  // Honours the scout.showInStatusBar setting (was previously declared but never
+  // applied — toggling it off did nothing).
+  function applyStatusBarVisibility(): void {
+    const show = vscode.workspace.getConfiguration('scout').get<boolean>('showInStatusBar', true)
+    if (show) statusBar.show()
+    else statusBar.hide()
+  }
+
   // ── Commands ───────────────────────────────────────────────────────────────
 
   async function connectAccount(): Promise<void> {
@@ -180,15 +188,19 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       vscode.env.openExternal(vscode.Uri.parse(`${APP_URL}/signup?ref=vscode`))
     }),
 
-    // Re-schedule if user changes the refresh interval setting
+    // React to relevant setting changes without a reload.
     vscode.workspace.onDidChangeConfiguration(e => {
       if (e.affectsConfiguration('scout.refreshIntervalMinutes')) {
         scheduleRefresh()
+      }
+      if (e.affectsConfiguration('scout.showInStatusBar')) {
+        applyStatusBarVisibility()
       }
     }),
   )
 
   // ── Initial load ───────────────────────────────────────────────────────────
+  applyStatusBarVisibility()
   await refresh()
   scheduleRefresh()
   // Register disposal AFTER scheduleRefresh() so refreshTimer is defined.

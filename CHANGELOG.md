@@ -6,6 +6,9 @@
   Policy (script-src nonce) blocked inline onclick handlers, so "Start free",
   "connect", refresh, and all links were dead. Rewired via data-action +
   event delegation so they work under CSP.
+- **Fixed: the `scout.showInStatusBar` setting did nothing.** It was declared
+  but never read, so the status bar always showed. Now honoured, and reacts to
+  changes live (no reload).
 - Brand polish: the panel logo now uses the real Scout gecko mascot (was a
   generic 🦎 emoji), matching the Marketplace icon.
 - Fixed the Activity Bar icon — now a clean monochrome gecko silhouette
