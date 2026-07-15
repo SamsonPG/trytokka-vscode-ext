@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.0.10 — 2026-07-15
+
+- Marketplace release tag for the colored Scout + thin outline Activity/status bar icon work.
+
 ## 1.0.9 — 2026-07-15
 
 - **Marketplace / panel:** full-color Scout mascot again (`media/icon.png` synced from TryTokka web icons).
