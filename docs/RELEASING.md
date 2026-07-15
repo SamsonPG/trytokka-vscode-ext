@@ -1,28 +1,18 @@
 # Releasing (maintainers)
 
-Publishing is automated by GitHub Actions — you never run `vsce publish` by hand.
+Marketplace updates are **manual uploads** (no VSCE_PAT / Actions publish).
 
-**One-time setup** — add two repository secrets (Settings → Secrets and variables → Actions):
-
-| Secret | Where to get it | Enables |
-|--------|-----------------|---------|
-| `VSCE_PAT` | Azure DevOps PAT for the `trytokka` publisher (Marketplace: Manage) | VS Code Marketplace |
-| `OVSX_PAT` | Access token from [open-vsx.org](https://open-vsx.org) | Cursor / VSCodium (optional) |
-
-**To cut a release:**
+1. Bump `version` in `package.json` and add a CHANGELOG entry.
+2. Commit and push `main`.
+3. Package locally:
 
 ```bash
-# 1. Bump the version in package.json (e.g. 1.0.0 → 1.0.1)
-# 2. Commit it
-git commit -am "release: v1.0.1"
-# 3. Tag and push — the tag must match package.json exactly
-git tag v1.0.1
-git push origin main --tags
+npm run compile
+npx @vscode/vsce package --allow-missing-repository -o extension.vsix
 ```
 
-The `Publish extension` workflow then compiles, verifies the tag matches
-`package.json`, packages the `.vsix`, publishes to both registries (skipping any
-whose secret is absent), and attaches the `.vsix` to the GitHub Release.
+4. Upload `extension.vsix` in [Marketplace → Manage](https://marketplace.visualstudio.com/manage/publishers/trytokka) (same flow you use today).
 
-Every push/PR also runs a `CI` workflow that compiles and dry-run-packages, so a
-broken build can't reach a tag.
+Optional: attach the `.vsix` to a GitHub Release for yourself (`gh release create vX.Y.Z extension.vsix`).
+
+CI still compiles + dry-run packages on every push/PR so breaks are caught early. It does **not** publish.
