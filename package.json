@@ -2,7 +2,7 @@
   "name": "scout-ai-spend-tracker",
   "displayName": "Scout — AI Spend Tracker",
   "description": "See exactly what AI APIs are costing you, right in VS Code. No proxy. No code changes. Tracks OpenAI, Anthropic, Gemini, OpenRouter, Azure, Bedrock, Cursor in one number. By TryTokka.",
-  "version": "1.0.2",
+  "version": "1.0.9",
   "publisher": "trytokka",
   "icon": "media/icon.png",
   "galleryBanner": {
@@ -20,13 +20,23 @@
   },
   "license": "MIT",
   "engines": { "vscode": "^1.85.0" },
-  "categories": ["Other", "Visualization"],
+  "categories": ["Machine Learning", "Visualization", "Data Science"],
   "keywords": [
     "AI cost tracker",
     "OpenAI cost",
     "Anthropic cost",
     "LLM cost",
-    "AI spend"
+    "AI spend",
+    "Cursor spend",
+    "Gemini billing",
+    "OpenRouter cost",
+    "Azure OpenAI",
+    "AWS Bedrock",
+    "FinOps",
+    "API billing",
+    "status bar",
+    "token usage",
+    "AI budget"
   ],
   "activationEvents": ["onStartupFinished"],
   "main": "./out/extension.js",
@@ -36,6 +46,14 @@
         "command": "scout.connect",
         "title": "Scout: Connect TryTokka Account",
         "icon": "$(plug)"
+      },
+      {
+        "command": "scout.pasteToken",
+        "title": "Scout: Paste Widget Token"
+      },
+      {
+        "command": "scout.tryDemo",
+        "title": "Scout: Try Demo (Sample Spend)"
       },
       {
         "command": "scout.disconnect",
@@ -55,6 +73,15 @@
         "title": "Scout: Start Free — trytokka.com"
       }
     ],
+    "icons": {
+      "scout-outline": {
+        "description": "Scout thin outline mark (Activity Bar / status bar)",
+        "default": {
+          "fontPath": "./media/font/scout-icons.woff",
+          "fontCharacter": "\\f101"
+        }
+      }
+    },
     "viewsContainers": {
       "activitybar": [
         {
@@ -73,6 +100,33 @@
         }
       ]
     },
+    "walkthroughs": [
+      {
+        "id": "scout.getStarted",
+        "title": "Get started with Scout",
+        "description": "See AI API spend in your VS Code status bar — demo in seconds, or connect TryTokka for live numbers.",
+        "steps": [
+          {
+            "id": "scout.walk.open",
+            "title": "Open the Scout panel",
+            "description": "Click the Scout gecko in the Activity Bar, or run **Scout: Open Spend Panel**.\n\n[Open Scout](command:scout.openPanel)",
+            "media": { "markdown": "media/walkthrough/open.md" }
+          },
+          {
+            "id": "scout.walk.statusbar",
+            "title": "Watch the status bar",
+            "description": "Once connected or in demo mode, your month spend lives on the right status bar — every time you code.\n\n[Try demo](command:scout.tryDemo)",
+            "media": { "markdown": "media/walkthrough/statusbar.md" }
+          },
+          {
+            "id": "scout.walk.connect",
+            "title": "Connect or try demo",
+            "description": "Paste a Widget Token for live spend, try sample data first, or create a free TryTokka account.\n\n[Paste token](command:scout.pasteToken) · [Try demo](command:scout.tryDemo) · [Start free](command:scout.openSignup)",
+            "media": { "markdown": "media/walkthrough/connect.md" }
+          }
+        ]
+      }
+    ],
     "configuration": {
       "title": "Scout — AI Spend Tracker",
       "properties": {
@@ -104,9 +158,14 @@
           "group": "navigation"
         },
         {
-          "command": "scout.connect",
+          "command": "scout.pasteToken",
           "when": "view == scout.panel",
           "group": "navigation"
+        },
+        {
+          "command": "scout.disconnect",
+          "when": "view == scout.panel",
+          "group": "1_account"
         }
       ]
     }
@@ -115,6 +174,7 @@
     "vscode:prepublish": "npm run compile",
     "compile": "tsc -p ./",
     "watch": "tsc -watch -p ./",
+    "test": "npm run compile && node --test out/test/*.test.js",
     "package": "vsce package --allow-missing-repository",
     "publish:vscode": "vsce publish",
     "publish:ovsx": "ovsx publish"

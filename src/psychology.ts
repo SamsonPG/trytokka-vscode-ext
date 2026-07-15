@@ -1,25 +1,18 @@
 /**
  * src/psychology.ts
  * The psychological timing engine — decides WHAT to show and WHEN.
- *
- * 7 principles applied:
- *   1. Loss Aversion        — "leaving" not neutral numbers
- *   2. Pain of Paying       — make invisible API costs salient
- *   3. Present Bias         — always today's accumulating total
- *   4. Spotlight Effect     — daily visibility builds urgency over 4–7 days
- *   5. Anchoring            — show total before savings opportunity
- *   6. Endowment Effect     — baseline ownership after a few days
- *   7. Variable Reward      — spike detection = compulsive checking
  */
 import type { SpendData } from './api'
 import type { Storage } from './storage'
 
-const SPIKE_PERCENT         = 0.20   // 20% jump = spike
-const SPIKE_MIN_USD         = 2.00   // minimum $2 absolute increase
-const MONTH_END_DAYS        = 5      // last 5 days = month-end urgency
-const CTA_WINDOW_START      = 4      // start showing CTA on day 4
-const CTA_WINDOW_END        = 14     // stop after day 14
-const CTA_MAX_SHOWS         = 3      // never show more than 3 times
+const SPIKE_PERCENT    = 0.20
+const SPIKE_MIN_USD    = 2.00
+const MONTH_END_DAYS   = 5
+const CTA_WINDOW_START = 4
+const CTA_WINDOW_END   = 14
+const CTA_MAX_SHOWS    = 3
+/** Month-end yellow only if spend has signal — avoids false alarms on tiny bills. */
+const MONTH_END_WARN_USD = 20
 
 export interface PsychState {
   statusLabel:      string
@@ -34,59 +27,86 @@ export interface PsychState {
   isMonthEnd:       boolean
 }
 
-export function computePsychState(data: SpendData, storage: Storage): PsychState {
+export interface PsychOptions {
+  /** Local VS Code threshold (USD). 0 = off. Flashes status bar red when exceeded. */
+  localAlertThresholdUsd?: number
+  /** Prefix status label when showing sample data. */
+  demoMode?: boolean
+}
+
+export function computePsychState(
+  data: SpendData,
+  storage: Storage,
+  options: PsychOptions = {},
+): PsychState {
   const days     = storage.daysSinceInstall()
   const lastCost = storage.getLastMonthCost()
   const ctaShown = storage.getCtaShownCount()
+  const localThreshold = options.localAlertThresholdUsd ?? 0
+  const demoMode = options.demoMode === true
 
-  // ── 1. Spike detection ────────────────────────────────────────────────────
   const costDelta = data.monthCost - lastCost
   const pctJump   = lastCost > 0 ? costDelta / lastCost : 0
-  const isSpike   = costDelta >= SPIKE_MIN_USD && pctJump >= SPIKE_PERCENT && lastCost > 0
+  const isSpike   = !demoMode
+    && costDelta >= SPIKE_MIN_USD
+    && pctJump >= SPIKE_PERCENT
+    && lastCost > 0
 
-  // ── 2. Month-end ──────────────────────────────────────────────────────────
   const now         = new Date()
   const daysInMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate()
   const daysLeft    = daysInMonth - now.getDate()
   const isMonthEnd  = daysLeft <= MONTH_END_DAYS
+  const localBreach = localThreshold > 0 && data.monthCost > localThreshold
+  const projected   = projectedMonthCost(data.monthCost, now)
+  const monthEndWarn = isMonthEnd && data.monthCost >= MONTH_END_WARN_USD
 
-  // ── 3. Status color ───────────────────────────────────────────────────────
   const statusColor: PsychState['statusColor'] =
-    data.alertStatus === 'critical' || isSpike   ? 'danger'
-    : data.alertStatus === 'warning' || isMonthEnd ? 'warning'
+    data.alertStatus === 'critical' || isSpike || localBreach ? 'danger'
+    : data.alertStatus === 'warning' || monthEndWarn ? 'warning'
     : 'safe'
 
-  // ── 4. Status bar label (Loss Aversion — "leaving" framing) ──────────────
   const m = formatUsd(data.monthCost)
   const t = formatUsd(data.todayCost ?? 0)
+  const p = formatUsd(projected)
+  const demoTag = demoMode ? 'Demo · ' : ''
 
-  const statusLabel = isSpike              ? `🦎 ⚠ ${m} — spike!`
-    : statusColor === 'danger'             ? `🦎 🔴 ${m} this month`
-    : isMonthEnd                           ? `🦎 ${m} — ${daysLeft}d left`
-    : `🦎 ${m} leaving this month`
+  const statusLabel = isSpike
+    ? `$(scout-outline) ${demoTag}${m} — spike`
+    : localBreach
+    ? `$(scout-outline) ${demoTag}${m} over local limit`
+    : statusColor === 'danger'
+    ? `$(scout-outline) ${demoTag}${m} this month`
+    : isMonthEnd
+    ? `$(scout-outline) ${demoTag}${m} → ${p} paced · ${daysLeft}d left`
+    : `$(scout-outline) ${demoTag}${m} leaving this month`
 
-  // ── 5. Panel headline (Anchoring — total first) ───────────────────────────
   let spendPhrase: string
   let subPhrase: string
 
-  if (isSpike) {
+  if (demoMode) {
+    spendPhrase = `Sample: ${m} on AI this month`
+    subPhrase   = `Today ${t} · on pace for ${p}. Connect a token for your real number.`
+  } else if (isSpike) {
     spendPhrase = `Something just cost you ${formatUsd(costDelta)}`
     subPhrase   = `Month jumped to ${m} — up ${Math.round(pctJump * 100)}% since last check`
+  } else if (localBreach) {
+    spendPhrase = `${m} — over your local $${localThreshold} limit`
+    subPhrase   = `Today: ${t}. Adjust in Settings → Scout, or open the dashboard.`
   } else if (isMonthEnd) {
-    spendPhrase = `${m} spent — ${daysLeft} day${daysLeft !== 1 ? 's' : ''} left`
-    subPhrase   = `Today: ${t}`
+    spendPhrase = `${m} spent — on pace for ${p}`
+    subPhrase   = `${daysLeft} day${daysLeft !== 1 ? 's' : ''} left · Today: ${t}`
   } else if (days <= 1) {
     spendPhrase = `You've spent ${m} on AI this month`
     subPhrase   = `Scout is now watching. Check back tomorrow to see the pattern.`
   } else {
-    // Endowment Effect: "your X-day baseline" after a few days of data
     spendPhrase = `${m} leaving this month on AI`
-    subPhrase   = `Today: ${t} · Tracking ${days} day${days !== 1 ? 's' : ''}`
+    subPhrase   = `Today: ${t} · Tracking ${days} day${days !== 1 ? 's' : ''} · Pace ${p}`
   }
 
-  // ── 6. CTA (Spotlight Effect + Conversion Window) ─────────────────────────
   const inWindow = days >= CTA_WINDOW_START && days <= CTA_WINDOW_END
-  const showCta  = ctaShown < CTA_MAX_SHOWS && (isSpike || isMonthEnd || inWindow)
+  const showCta  = !demoMode
+    && ctaShown < CTA_MAX_SHOWS
+    && (isSpike || isMonthEnd || inWindow || localBreach)
 
   let ctaUrgency: PsychState['ctaUrgency'] = 'low'
   let ctaReason = 'You\'ve been tracking for a few days'
@@ -94,6 +114,9 @@ export function computePsychState(data: SpendData, storage: Storage): PsychState
   if (isSpike) {
     ctaUrgency = 'high'
     ctaReason  = `Spend jumped ${Math.round(pctJump * 100)}% — set a limit before this closes`
+  } else if (localBreach) {
+    ctaUrgency = 'high'
+    ctaReason  = `You crossed your local $${localThreshold} threshold in VS Code`
   } else if (isMonthEnd && data.alertStatus !== 'safe') {
     ctaUrgency = 'high'
     ctaReason  = `${daysLeft} days left this month and spend is elevated`
@@ -114,4 +137,12 @@ export function formatUsd(n: number): string {
   if (n >= 1000) return `$${(n / 1000).toFixed(1)}k`
   if (n >= 10)   return `$${n.toFixed(2)}`
   return `$${n.toFixed(4)}`
+}
+
+/** Projected month-end spend from day-of-month pace. Safe on day 1. */
+export function projectedMonthCost(monthCost: number, now = new Date()): number {
+  if (!Number.isFinite(monthCost) || monthCost < 0) return 0
+  const daysInMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate()
+  const dayOfMonth  = Math.max(1, now.getDate())
+  return (monthCost / dayOfMonth) * daysInMonth
 }

@@ -4,6 +4,8 @@
 
 No proxy. No code changes. No SDK. Just a number in your status bar that tells you the truth.
 
+![Scout status bar and spend panel](media/marketplace-hero.png)
+
 ---
 
 ## What it does
@@ -11,17 +13,19 @@ No proxy. No code changes. No SDK. Just a number in your status bar that tells y
 Scout shows your real AI API spend in the VS Code status bar — updated automatically, no browser tab required.
 
 ```
-🦎 $47.20 leaving this month
+$(scout-outline) $47.20 leaving this month
 ```
 
 Click it. Get the full breakdown:
 
 - **Total this month** — the anchor number everything else is judged against
 - **Today's spend** — what left today, right now
-- **Projected month total** — on pace for what?
+- **Projected month total** — on pace for what? (also shown in the status bar near month-end)
 - **Top provider** — which API is driving the bill
 - **Days left** — how much runway before month-end
 - **Spike alerts** — popup the moment your spend jumps unexpectedly
+
+**New:** **Scout: Try Demo** shows sample spend instantly — no account required — so you feel the habit before you connect.
 
 ---
 
@@ -41,14 +45,13 @@ All providers. One number. One place.
 
 ---
 
-## How to set up (2 minutes)
+## How to set up
 
-1. **Create a free TryTokka account** at [trytokka.com](https://trytokka.com/signup?ref=vscode) — 7-day trial, no card needed
-2. **Connect your AI providers** with read-only API keys (TryTokka never makes API calls — read-only billing access only)
-3. **Copy your Widget Token** from Settings → Apps → Widget Token
-4. **Paste the token** in Scout (Command: `Scout: Connect TryTokka Account`)
+1. **Install Scout** and open the Activity Bar gecko (or complete the Getting Started walkthrough)
+2. **Try demo** for sample numbers — or **paste** your Widget Token if you already use TryTokka
+3. **New to TryTokka?** [Create a free account](https://trytokka.com/signup?ref=vscode) → connect providers → copy Widget Token from Settings → Apps
 
-Done. Scout starts tracking instantly.
+Done. Scout starts watching instantly.
 
 ---
 
@@ -65,8 +68,8 @@ Full security details: [trytokka.com/security](https://trytokka.com/security)
 | Colour | Meaning |
 |--------|---------|
 | Default | Spend within normal range |
-| 🟡 Yellow | Approaching your configured alert threshold |
-| 🔴 Red | Alert threshold crossed, or sudden spike detected |
+| Yellow | Approaching your configured alert threshold, or elevated month-end pace |
+| Red | Alert threshold crossed, or sudden spike detected |
 
 ---
 
@@ -85,7 +88,7 @@ Full security details: [trytokka.com/security](https://trytokka.com/security)
 Scout gives you the number. [TryTokka](https://trytokka.com) gives you:
 
 - **Email alerts** — get notified before your bill arrives
-- **Model optimizer** — Scout shows you exactly which model to switch and how much you'd save (e.g. "Switch gpt-4o → gpt-4o-mini: save $34/month based on your actual token usage")
+- **Model optimizer** — which model to switch and how much you'd save
 - **Spend forecasting** — on pace for what this month?
 - **Spike investigation** — click any day, see which model caused the jump
 - **Team plans** — shared spend visibility for the whole team
@@ -98,10 +101,13 @@ Scout gives you the number. [TryTokka](https://trytokka.com) gives you:
 
 | Command | Description |
 |---------|-------------|
-| `Scout: Connect TryTokka Account` | Paste your widget token to start tracking |
-| `Scout: Disconnect Account` | Remove your token |
+| `Scout: Try Demo (Sample Spend)` | Show realistic sample data immediately |
+| `Scout: Paste Widget Token` | Connect with an existing TryTokka token |
+| `Scout: Connect TryTokka Account` | Demo, signup, or paste token |
+| `Scout: Disconnect Account` | Remove your token / exit demo |
 | `Scout: Refresh Now` | Fetch the latest spend data immediately |
 | `Scout: Open Spend Panel` | Open the sidebar breakdown |
+| `Scout: Start Free — trytokka.com` | Open TryTokka signup in your browser |
 
 ---
 
@@ -110,6 +116,7 @@ Scout gives you the number. [TryTokka](https://trytokka.com) gives you:
 - Your widget token is stored in VS Code's encrypted `SecretStorage` (OS keychain)
 - No API keys are stored in this extension — token only
 - Scout makes read-only GET requests to `trytokka.com/api/widget-summary`
+- Demo mode never leaves your machine (sample numbers only)
 - No telemetry, no analytics, no data collection by this extension
 
 ---
@@ -120,37 +127,6 @@ Scout gives you the number. [TryTokka](https://trytokka.com) gives you:
 - [GitHub](https://github.com/SamsonPG/trytokka-vscode-ext) — source code
 - [Support](https://trytokka.com/support) — get help
 - [Security](https://trytokka.com/security) — how we protect your keys
-
----
-
-## Releasing (maintainers)
-
-Publishing is automated by GitHub Actions — you never run `vsce publish` by hand.
-
-**One-time setup** — add two repository secrets (Settings → Secrets and variables → Actions):
-
-| Secret | Where to get it | Enables |
-|--------|-----------------|---------|
-| `VSCE_PAT` | Azure DevOps PAT for the `trytokka` publisher (Marketplace: Manage) | VS Code Marketplace |
-| `OVSX_PAT` | Access token from [open-vsx.org](https://open-vsx.org) | Cursor / VSCodium (optional) |
-
-**To cut a release:**
-
-```bash
-# 1. Bump the version in package.json (e.g. 1.0.0 → 1.0.1)
-# 2. Commit it
-git commit -am "release: v1.0.1"
-# 3. Tag and push — the tag must match package.json exactly
-git tag v1.0.1
-git push origin main --tags
-```
-
-The `Publish extension` workflow then compiles, verifies the tag matches
-`package.json`, packages the `.vsix`, publishes to both registries (skipping any
-whose secret is absent), and attaches the `.vsix` to the GitHub Release.
-
-Every push/PR also runs a `CI` workflow that compiles and dry-run-packages, so a
-broken build can't reach a tag.
 
 ---
 

@@ -7,7 +7,7 @@
 import * as vscode from 'vscode'
 import type { SpendData } from './api'
 import type { PsychState } from './psychology'
-import { formatUsd } from './psychology'
+import { formatUsd, projectedMonthCost } from './psychology'
 
 export class ScoutSidebarProvider implements vscode.WebviewViewProvider {
   public static readonly viewId = 'scout.panel'
@@ -16,8 +16,28 @@ export class ScoutSidebarProvider implements vscode.WebviewViewProvider {
   private _lastData?: SpendData
   private _lastState?: PsychState
   private _connected = false
+  private _demoMode = false
+  private _actionHandler?: (type: string) => void
+  private _visibilityListener?: () => void
 
   constructor(private readonly _context: vscode.ExtensionContext) {}
+
+  /** True when we have a last successful spend payload (stale-OK on transient errors). */
+  hasCachedData(): boolean {
+    return Boolean(this._lastData && this._lastState)
+  }
+
+  isVisible(): boolean {
+    return this._view?.visible === true
+  }
+
+  onDidChangeVisibility(listener: () => void): void {
+    this._visibilityListener = listener
+  }
+
+  setActionHandler(handler: (type: string) => void): void {
+    this._actionHandler = handler
+  }
 
   resolveWebviewView(
     webviewView: vscode.WebviewView,
@@ -31,46 +51,72 @@ export class ScoutSidebarProvider implements vscode.WebviewViewProvider {
     }
     webviewView.webview.html = this._getHtml(webviewView.webview)
 
-    webviewView.webview.onDidReceiveMessage((msg: { type: string }) => {
+    const sub = webviewView.webview.onDidReceiveMessage((msg: { type: string }) => {
       switch (msg.type) {
-        case 'connect':      vscode.commands.executeCommand('scout.connect'); break
-        case 'openSignup':   vscode.env.openExternal(vscode.Uri.parse('https://trytokka.com/signup?ref=vscode')); break
-        case 'openDashboard':vscode.env.openExternal(vscode.Uri.parse('https://trytokka.com/dashboard')); break
-        case 'openPricing':  vscode.env.openExternal(vscode.Uri.parse('https://trytokka.com/pricing?ref=vscode')); break
-        case 'refresh':      vscode.commands.executeCommand('scout.refresh'); break
+        case 'connect':
+        case 'pasteToken':
+        case 'tryDemo':
+          this._actionHandler?.(msg.type)
+          break
+        case 'openSignup':    void vscode.env.openExternal(vscode.Uri.parse('https://trytokka.com/signup?ref=vscode')); break
+        case 'openDashboard': void vscode.env.openExternal(vscode.Uri.parse('https://trytokka.com/dashboard')); break
+        case 'openPricing':   void vscode.env.openExternal(vscode.Uri.parse('https://trytokka.com/pricing?ref=vscode')); break
+        case 'refresh':       void vscode.commands.executeCommand('scout.refresh'); break
       }
     })
+    this._context.subscriptions.push(sub)
+    this._context.subscriptions.push(
+      webviewView.onDidChangeVisibility(() => {
+        this._visibilityListener?.()
+      }),
+    )
 
     if (this._lastData && this._lastState) {
-      this._pushUpdate(this._lastData, this._lastState, this._connected)
+      this._pushUpdate(this._lastData, this._lastState, this._connected, this._demoMode)
+    } else if (!this._connected) {
+      this._view.webview.postMessage({ type: 'disconnected' })
     }
   }
 
-  update(data: SpendData, state: PsychState, connected: boolean): void {
+  update(
+    data: SpendData,
+    state: PsychState,
+    connected: boolean,
+    opts: { demoMode?: boolean } = {},
+  ): void {
     this._lastData  = data
     this._lastState = state
     this._connected = connected
-    if (this._view) this._pushUpdate(data, state, connected)
+    this._demoMode  = opts.demoMode === true
+    if (this._view) this._pushUpdate(data, state, connected, this._demoMode)
   }
 
   showDisconnected(): void {
     this._connected = false
+    this._demoMode  = false
     this._lastData  = undefined
+    this._lastState = undefined
     this._view?.webview.postMessage({ type: 'disconnected' })
   }
 
-  private _pushUpdate(data: SpendData, state: PsychState, connected: boolean): void {
+  private _pushUpdate(
+    data: SpendData,
+    state: PsychState,
+    connected: boolean,
+    demoMode: boolean,
+  ): void {
     const now         = new Date()
     const daysInMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate()
-    const dayOfMonth  = now.getDate()
+    const dayOfMonth  = Math.max(1, now.getDate())
 
     this._view?.webview.postMessage({
       type: 'update',
       connected,
+      demoMode,
       data: {
         monthCostFmt: formatUsd(data.monthCost),
         todayCostFmt: formatUsd(data.todayCost ?? 0),
-        projected:    formatUsd((data.monthCost / dayOfMonth) * daysInMonth),
+        projected:    formatUsd(projectedMonthCost(data.monthCost, now)),
         daysLeft:     daysInMonth - dayOfMonth,
         pctOfMonth:   Math.round((dayOfMonth / daysInMonth) * 100),
         topProvider:  data.topProvider,
@@ -93,7 +139,12 @@ export class ScoutSidebarProvider implements vscode.WebviewViewProvider {
 
   private _getHtml(webview: vscode.Webview): string {
     const nonce = getNonce()
-    const csp = `default-src 'none'; style-src 'nonce-${nonce}'; script-src 'nonce-${nonce}'; img-src data: https:;`
+    const csp = `default-src 'none'; style-src 'nonce-${nonce}'; script-src 'nonce-${nonce}'; img-src ${webview.cspSource} data: https:;`
+    // Full-color Scout — same as Marketplace icon. Thin white outline is Activity Bar + status bar only.
+    const iconUri = webview.asWebviewUri(
+      vscode.Uri.joinPath(this._context.extensionUri, 'media', 'icon.png'),
+    )
+    const geckoColor = `<img class="scout-logo" src="${iconUri}" alt="" width="56" height="56" />`
 
     return /* html */`<!DOCTYPE html>
 <html lang="en">
@@ -103,16 +154,16 @@ export class ScoutSidebarProvider implements vscode.WebviewViewProvider {
 <meta http-equiv="Content-Security-Policy" content="${csp}">
 <title>Scout</title>
 <style nonce="${nonce}">
-/* ── TryTokka design tokens (dark theme) ──────────────────────────────── */
+/* TryTokka brand accents + VS Code theme tokens so light/HC themes stay readable */
 :root {
-  --canvas:         #080C0B;
-  --surface:        #0F1512;
-  --surface-2:      #161F1B;
-  --rim:            #24302A;
-  --rim-2:          #2F3D36;
-  --text:           #ECF5F0;
-  --text-muted:     #8FA89A;
-  --text-faint:     #5C7168;
+  --canvas:         var(--vscode-sideBar-background, #080C0B);
+  --surface:        var(--vscode-editorWidget-background, #0F1512);
+  --surface-2:      var(--vscode-input-background, #161F1B);
+  --rim:            var(--vscode-panel-border, #24302A);
+  --rim-2:          var(--vscode-widget-border, #2F3D36);
+  --text:           var(--vscode-foreground, #ECF5F0);
+  --text-muted:     var(--vscode-descriptionForeground, #8FA89A);
+  --text-faint:     var(--vscode-disabledForeground, #5C7168);
   --brand:          #34E89A;
   --brand-dark:     #22C55E;
   --brand-hover:    #5AF0A8;
@@ -120,10 +171,10 @@ export class ScoutSidebarProvider implements vscode.WebviewViewProvider {
   --scout-green:    #4ADE80;
   --scout-amber:    #FBBF24;
   --scout-deep:     #FB7185;
-  --highlight:      rgba(255,255,255,0.06);
-  --shadow-soft:    0 1px 2px rgba(0,0,0,0.24), 0 4px 16px rgba(0,0,0,0.18);
-  --shadow-lift:    0 4px 10px rgba(0,0,0,0.42), 0 14px 36px rgba(0,0,0,0.38), 0 0 0 1px rgba(255,255,255,0.05);
-  --shadow-glow:    0 0 0 1px rgba(52,232,154,0.32), 0 8px 32px rgba(52,232,154,0.24);
+  --highlight:      rgba(127,127,127,0.08);
+  --shadow-soft:    0 1px 2px rgba(0,0,0,0.18);
+  --shadow-lift:    0 4px 12px rgba(0,0,0,0.22);
+  --shadow-glow:    0 0 0 1px rgba(52,232,154,0.32), 0 8px 24px rgba(52,232,154,0.18);
   --radius-sm:      10px;
   --radius-md:      14px;
   --radius-lg:      18px;
@@ -138,7 +189,7 @@ export class ScoutSidebarProvider implements vscode.WebviewViewProvider {
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
 body {
-  font-family: 'DM Sans', system-ui, -apple-system, sans-serif;
+  font-family: var(--vscode-font-family, system-ui, -apple-system, sans-serif);
   font-size: 13px;
   line-height: 1.55;
   -webkit-font-smoothing: antialiased;
@@ -208,7 +259,7 @@ body {
 }
 .brand-row    { display: flex; align-items: center; gap: 8px; }
 .brand-gecko  { line-height: 0; }
-.brand-gecko svg { width: 22px; height: 22px; display: block; }
+.brand-gecko .scout-logo { width: 22px; height: 22px; display: block; border-radius: 5px; }
 .brand-name   {
   font-size: 11px; font-weight: 700; letter-spacing: 0.08em;
   text-transform: uppercase; color: var(--brand);
@@ -311,7 +362,7 @@ body {
 /* ── Connect screen ──────────────────────────────────────────────────── */
 .connect-hero { text-align: center; padding: 20px 8px 8px; }
 .connect-gecko { margin-bottom: 10px; line-height: 0; }
-.connect-gecko svg { width: 56px; height: 56px; display: inline-block; }
+.connect-gecko .scout-logo { width: 56px; height: 56px; display: inline-block; border-radius: 12px; }
 .connect-title { font-size: 15px; font-weight: 700; color: var(--text); margin-bottom: 6px; }
 .connect-sub   { font-size: 12px; color: var(--text-muted); line-height: 1.6; margin-bottom: 16px; }
 
@@ -361,7 +412,7 @@ body {
 <!-- ───────────── DISCONNECTED ──────────────────────────────────────────── -->
 <div id="view-disconnected">
   <div class="connect-hero">
-    <div class="connect-gecko"><svg viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><path d="M22 48Q18 24 50 20Q80 22 82 46Q84 58 68 64Q50 69 34 63Q20 58 22 48Z" fill="#34D399"/><ellipse cx="50" cy="22" rx="9" ry="5.5" fill="#34D399"/><ellipse cx="35" cy="40" rx="13" ry="14" fill="#06251C"/><ellipse cx="65" cy="40" rx="13" ry="14" fill="#06251C"/><circle cx="35" cy="40" r="9.5" fill="#FACC15"/><circle cx="65" cy="40" r="9.5" fill="#FACC15"/><ellipse cx="35" cy="40" rx="3.4" ry="8.5" fill="#06251C"/><ellipse cx="65" cy="40" rx="3.4" ry="8.5" fill="#06251C"/><circle cx="31" cy="34" r="2.4" fill="#fff" opacity="0.95"/><circle cx="61" cy="34" r="2.4" fill="#fff" opacity="0.95"/><path d="M42 56Q50 61 58 56" stroke="#06251C" stroke-width="2.6" stroke-linecap="round" fill="none" opacity="0.6"/></svg></div>
+    <div class="connect-gecko">${geckoColor}</div>
     <div class="connect-title">Scout AI Spend Tracker</div>
     <div class="connect-sub">
       See exactly what OpenAI, Anthropic, Gemini,<br>
@@ -372,27 +423,26 @@ body {
   <div class="connect-steps">
     <div class="step">
       <div class="step-num">1</div>
-      <div class="step-text">Create a free TryTokka account — 7-day trial, no card needed</div>
+      <div class="step-text"><strong>Try demo</strong> — see sample spend in your status bar now</div>
     </div>
     <div class="step">
       <div class="step-num">2</div>
-      <div class="step-text">Connect AI providers with a read-only key</div>
+      <div class="step-text"><strong>Have an account?</strong> Paste your Widget Token (Settings → Apps)</div>
     </div>
     <div class="step">
       <div class="step-num">3</div>
-      <div class="step-text">Copy your Widget Token from Settings → Apps</div>
-    </div>
-    <div class="step">
-      <div class="step-num">4</div>
-      <div class="step-text">Paste it here — Scout starts watching instantly</div>
+      <div class="step-text"><strong>New?</strong> Start free on trytokka.com — 7 days, no card</div>
     </div>
   </div>
 
-  <button class="btn-primary" data-action="openSignup">
-    Start free — trytokka.com →
+  <button class="btn-primary" data-action="tryDemo">
+    Try demo — sample spend →
   </button>
-  <button class="btn-secondary" data-action="connect">
-    I have a token — connect
+  <button class="btn-secondary" data-action="pasteToken">
+    I have a token — paste
+  </button>
+  <button class="btn-secondary" data-action="openSignup">
+    Start free — trytokka.com
   </button>
 
   <div class="footer">
@@ -410,7 +460,7 @@ body {
   <!-- Header -->
   <div class="header">
     <div class="brand-row">
-      <span class="brand-gecko"><svg viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><path d="M22 48Q18 24 50 20Q80 22 82 46Q84 58 68 64Q50 69 34 63Q20 58 22 48Z" fill="#34D399"/><ellipse cx="50" cy="22" rx="9" ry="5.5" fill="#34D399"/><ellipse cx="35" cy="40" rx="13" ry="14" fill="#06251C"/><ellipse cx="65" cy="40" rx="13" ry="14" fill="#06251C"/><circle cx="35" cy="40" r="9.5" fill="#FACC15"/><circle cx="65" cy="40" r="9.5" fill="#FACC15"/><ellipse cx="35" cy="40" rx="3.4" ry="8.5" fill="#06251C"/><ellipse cx="65" cy="40" rx="3.4" ry="8.5" fill="#06251C"/><circle cx="31" cy="34" r="2.4" fill="#fff" opacity="0.95"/><circle cx="61" cy="34" r="2.4" fill="#fff" opacity="0.95"/><path d="M42 56Q50 61 58 56" stroke="#06251C" stroke-width="2.6" stroke-linecap="round" fill="none" opacity="0.6"/></svg></span>
+      <span class="brand-gecko">${geckoColor}</span>
       <span class="brand-name">Scout</span>
     </div>
     <div class="header-actions">
@@ -423,6 +473,12 @@ body {
     <div class="spend-label" id="spendLabel">THIS MONTH</div>
     <div class="spend-amount" id="monthCost">—</div>
     <div class="spend-sub" id="spendSub">Loading…</div>
+  </div>
+
+  <!-- Demo banner -->
+  <div class="status-badge warning" id="demoBanner" style="display:none">
+    <div class="badge-dot"></div>
+    <span>Sample data — paste a token for live spend</span>
   </div>
 
   <!-- Alert status badge -->
@@ -511,7 +567,7 @@ window.addEventListener('message', ({ data: msg }) => {
   if (msg.type === 'disconnected') { show('disconnected'); return }
   if (msg.type === 'update') {
     if (!msg.connected) { show('disconnected'); return }
-    render(msg.data, msg.psych)
+    render(msg.data, msg.psych, !!msg.demoMode)
   }
 })
 
@@ -520,7 +576,7 @@ function show(state) {
   document.getElementById('view-connected').style.display    = state === 'connected'    ? 'flex' : 'none'
 }
 
-function render(data, psych) {
+function render(data, psych, demoMode) {
   show('connected')
 
   // Spend card
@@ -530,11 +586,15 @@ function render(data, psych) {
   document.getElementById('monthCost').textContent   = data.monthCostFmt
   document.getElementById('spendSub').textContent    = psych.subPhrase
 
+  const demoBanner = document.getElementById('demoBanner')
+  demoBanner.style.display = demoMode ? 'flex' : 'none'
+
   // Status badge
   const badge = document.getElementById('statusBadge')
   const cls   = STATUS_CLASS[data.alertStatus] ?? 'safe'
   badge.className = 'status-badge ' + cls
   document.getElementById('statusText').textContent = STATUS_LABELS[data.alertStatus] ?? 'On track'
+  badge.style.display = demoMode ? 'none' : 'flex'
 
   // Spike banner
   const spike = document.getElementById('spikeBanner')
@@ -569,9 +629,14 @@ function render(data, psych) {
       '. Set an alert so Scout emails you before the bill arrives.'
   }
 
-  // Last updated
-  const mins = Math.round((Date.now() - new Date(data.lastUpdated).getTime()) / 60000)
-  document.getElementById('lastUpdated').textContent = mins < 2 ? 'Updated just now' : 'Updated ' + mins + 'm ago'
+  // Last updated (guard invalid / missing timestamps)
+  const ts = Date.parse(data.lastUpdated)
+  if (!Number.isFinite(ts)) {
+    document.getElementById('lastUpdated').textContent = 'Updated just now'
+  } else {
+    const mins = Math.max(0, Math.round((Date.now() - ts) / 60000))
+    document.getElementById('lastUpdated').textContent = mins < 2 ? 'Updated just now' : 'Updated ' + mins + 'm ago'
+  }
 }
 </script>
 </body>

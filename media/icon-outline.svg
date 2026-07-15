@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" fill="none">
+  <!-- Thin white outline on black — Activity Bar reference / optional light-theme assets.
+       Marketplace product icon is media/icon.png (full-color Scout). -->
+  <rect width="128" height="128" rx="28" fill="#080C0B"/>
+  <g fill="none" stroke="#FFFFFF" stroke-linecap="round" stroke-linejoin="round" transform="translate(14,14) scale(4.15)">
+    <path fill="none" stroke-width="0.95" d="M5.4 12.1c-.35-3.7 2.5-6.55 6.3-6.95 3.65-.35 6.75 1.75 7.15 5.2.3 2.15-1 3.9-2.75 4.85-.85.45-1.9.75-2.95.85-2.15.2-4.15-.4-5.5-1.55-1.05-.9-1.95-2.15-2.25-2.4z"/>
+    <path fill="none" stroke-width="0.9" d="M10.6 5.6c.45-.55 1.2-.9 1.9-.85.7.05 1.35.4 1.7.9"/>
+    <circle cx="9.15" cy="11.15" r="2.05" fill="none" stroke-width="0.95"/>
+    <circle cx="14.85" cy="11.15" r="2.05" fill="none" stroke-width="0.95"/>
+    <path fill="none" stroke-width="0.85" d="M9.15 9.55v3.2"/>
+    <path fill="none" stroke-width="0.85" d="M14.85 9.55v3.2"/>
+    <path fill="none" stroke-width="0.85" d="M10.7 14.55c.55.4 1.2.4 1.75 0"/>
+  </g>
+</svg>

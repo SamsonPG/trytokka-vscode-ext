@@ -2,17 +2,10 @@
  * src/extension.ts
  * Scout — AI Spend Tracker · VS Code Extension
  * by TryTokka (https://trytokka.com)
- *
- * Architecture:
- *   activation     → onStartupFinished (doesn't slow VS Code startup)
- *   status bar     → persistent spend number, refreshes every N minutes
- *   sidebar panel  → full breakdown with psychology-timed CTA
- *   data source    → TryTokka /api/widget-summary (Bearer token, read-only)
- *   token storage  → VS Code SecretStorage (OS keychain, encrypted)
- *   psychology     → timing engine decides what to show and when
  */
 import * as vscode from 'vscode'
 import { fetchSpend, looksLikeToken } from './api'
+import { demoSpendData } from './demo'
 import { Storage } from './storage'
 import { computePsychState } from './psychology'
 import { createStatusBar, updateStatusBar } from './statusBar'
@@ -21,7 +14,9 @@ import { ScoutSidebarProvider } from './sidebarProvider'
 const APP_URL = 'https://trytokka.com'
 
 export async function activate(context: vscode.ExtensionContext): Promise<void> {
-  const storage  = new Storage(context.secrets, context.globalState)
+  const storage   = new Storage(context.secrets, context.globalState)
+  storage.ensureInstallDate()
+
   const statusBar = createStatusBar()
   context.subscriptions.push(statusBar)
 
@@ -32,163 +27,241 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     }),
   )
 
-  // ── Refresh loop ───────────────────────────────────────────────────────────
   let refreshTimer: NodeJS.Timeout | undefined
+  let refreshInFlight = false
+  let lastLocalAlertAt = 0
+  let lastPsychShowCta = false
+
+  function scoutConfig() {
+    return vscode.workspace.getConfiguration('scout')
+  }
+
+  function clampedRefreshMinutes(): number {
+    const raw = scoutConfig().get<number>('refreshIntervalMinutes', 30)
+    if (!Number.isFinite(raw)) return 30
+    return Math.min(120, Math.max(5, raw))
+  }
+
+  function maybeRecordCta(): void {
+    if (lastPsychShowCta && sidebarProvider.isVisible()) {
+      storage.recordCtaImpressionIfNeeded()
+    }
+  }
+
+  sidebarProvider.onDidChangeVisibility(() => {
+    maybeRecordCta()
+  })
 
   async function refresh(): Promise<void> {
-    const token = await storage.getToken()
-    if (!token) {
-      updateStatusBar(statusBar, null, false)
-      sidebarProvider.showDisconnected()
-      return
-    }
+    if (refreshInFlight) return
+    refreshInFlight = true
+    try {
+      const demoMode = storage.isDemoMode()
+      const token = await storage.getToken()
 
-    const result = await fetchSpend(token)
-    if (!result.ok) {
-      // 401 = token revoked / expired → clear and prompt reconnect
-      if (result.status === 401) {
-        await storage.clearToken()
+      if (demoMode) {
+        const data = demoSpendData()
+        const psychState = computePsychState(data, storage, { demoMode: true })
+        lastPsychShowCta = false
+        updateStatusBar(statusBar, psychState, true, { demoMode: true })
+        sidebarProvider.update(data, psychState, true, { demoMode: true })
+        return
+      }
+
+      if (!token) {
+        lastPsychShowCta = false
         updateStatusBar(statusBar, null, false)
         sidebarProvider.showDisconnected()
-        vscode.window.showWarningMessage(
-          'Scout: Your TryTokka token is invalid or expired. Please reconnect.',
-          'Reconnect',
-        ).then(choice => { if (choice === 'Reconnect') connectAccount() })
-      } else {
-        // Transient error — don't clear token, just show stale state
-        vscode.window.setStatusBarMessage(`Scout: ${result.message}`, 8000)
+        return
       }
-      return
-    }
 
-    const { data } = result
-    const psychState = computePsychState(data, storage)
+      const result = await fetchSpend(token)
+      if (!result.ok) {
+        if (result.status === 401) {
+          await storage.clearToken()
+          updateStatusBar(statusBar, null, false)
+          sidebarProvider.showDisconnected()
+          const choice = await vscode.window.showWarningMessage(
+            'Scout: Your TryTokka token is invalid or expired. Please reconnect.',
+            'Reconnect',
+          )
+          if (choice === 'Reconnect') await pasteToken()
+          return
+        }
 
-    // Check local alert threshold (VS Code setting, separate from TryTokka alerts)
-    const localThreshold = vscode.workspace.getConfiguration('scout').get<number>('localAlertThresholdUsd', 0)
-    if (localThreshold > 0 && data.monthCost > localThreshold && psychState.statusColor === 'safe') {
-      vscode.window.showWarningMessage(
-        `Scout: AI spend hit $${data.monthCost.toFixed(2)} this month (your local threshold: $${localThreshold}).`,
-        'Open Dashboard',
-      ).then(c => { if (c === 'Open Dashboard') openDashboard() })
-    }
+        if (!sidebarProvider.hasCachedData()) {
+          updateStatusBar(statusBar, null, true)
+          statusBar.text = `$(scout-outline) Scout: ${shortErr(result.message)}`
+          statusBar.tooltip = result.message
+          statusBar.command = 'scout.refresh'
+        }
+        vscode.window.setStatusBarMessage(`Scout: ${result.message}`, 8000)
+        return
+      }
 
-    // Spike notification
-    const lastAcked = storage.getLastSpikeAckedCost()
-    if (psychState.isSpike && data.monthCost > lastAcked + 2) {
-      vscode.window.showWarningMessage(
-        `Scout: Your AI spend just jumped to $${data.monthCost.toFixed(2)} this month.`,
-        'Open Dashboard',
-        'Dismiss',
-      ).then(c => {
-        if (c === 'Open Dashboard') openDashboard()
-        storage.ackSpike(data.monthCost)
+      const { data } = result
+      const localThreshold = scoutConfig().get<number>('localAlertThresholdUsd', 0) ?? 0
+      const psychState = computePsychState(data, storage, {
+        localAlertThresholdUsd: localThreshold,
       })
+      lastPsychShowCta = psychState.showCta
+
+      if (
+        localThreshold > 0 &&
+        data.monthCost > localThreshold &&
+        Date.now() - lastLocalAlertAt > 6 * 60 * 60 * 1000
+      ) {
+        lastLocalAlertAt = Date.now()
+        const c = await vscode.window.showWarningMessage(
+          `Scout: AI spend hit $${data.monthCost.toFixed(2)} this month (your local threshold: $${localThreshold}).`,
+          'Open Dashboard',
+        )
+        if (c === 'Open Dashboard') openDashboard()
+      }
+
+      const lastAcked = storage.getLastSpikeAckedCost()
+      if (psychState.isSpike && data.monthCost > lastAcked + 2) {
+        const c = await vscode.window.showWarningMessage(
+          `Scout: Your AI spend just jumped to $${data.monthCost.toFixed(2)} this month.`,
+          'Open Dashboard',
+          'Dismiss',
+        )
+        if (c === 'Open Dashboard') openDashboard()
+        if (c === 'Open Dashboard' || c === 'Dismiss') storage.ackSpike(data.monthCost)
+      }
+
+      storage.setLastMonthCost(data.monthCost)
+      maybeRecordCta()
+
+      updateStatusBar(statusBar, psychState, true)
+      sidebarProvider.update(data, psychState, true)
+    } finally {
+      refreshInFlight = false
     }
-
-    // Update persistent last cost for next spike check
-    storage.setLastMonthCost(data.monthCost)
-
-    // Track CTA shown count so we don't nag
-    if (psychState.showCta) storage.incrementCtaShown()
-
-    updateStatusBar(statusBar, psychState, true)
-    sidebarProvider.update(data, psychState, true)
   }
 
   function scheduleRefresh(): void {
     if (refreshTimer) clearInterval(refreshTimer)
-    const minutes = vscode.workspace.getConfiguration('scout').get<number>('refreshIntervalMinutes', 30)
-    const ms = Math.max(5, minutes) * 60_000
-    refreshTimer = setInterval(refresh, ms)
+    const ms = clampedRefreshMinutes() * 60_000
+    refreshTimer = setInterval(() => { void refresh() }, ms)
   }
 
-  // Honours the scout.showInStatusBar setting (was previously declared but never
-  // applied — toggling it off did nothing).
   function applyStatusBarVisibility(): void {
-    const show = vscode.workspace.getConfiguration('scout').get<boolean>('showInStatusBar', true)
+    const show = scoutConfig().get<boolean>('showInStatusBar', true)
     if (show) statusBar.show()
     else statusBar.hide()
   }
 
-  // ── Commands ───────────────────────────────────────────────────────────────
-
-  async function connectAccount(): Promise<void> {
-    // Step 1: offer to open TryTokka if they don't have an account
-    const choice = await vscode.window.showInformationMessage(
-      'Scout needs a TryTokka account to fetch your AI spend. It\'s free (7-day trial, no card).',
-      'I have an account',
-      'Create free account →',
-    )
-
-    if (choice === 'Create free account →') {
-      vscode.env.openExternal(vscode.Uri.parse(`${APP_URL}/signup?ref=vscode`))
-      // After they sign up, they'll need the token — prompt after a moment
-      await new Promise<void>(r => setTimeout(r, 2000))
-    }
-
-    if (!choice && choice !== 'I have an account') return
-
-    // Step 2: get the token
+  /** Existing TryTokka users — straight to paste (no signup fork). */
+  async function pasteToken(): Promise<void> {
     const token = await vscode.window.showInputBox({
-      title:       'Scout — Connect TryTokka',
-      prompt:      'Paste your Widget Token from TryTokka → Settings → Apps → Widget Token',
-      placeHolder: 'tk_live_...',
+      title:       'Scout — Paste Widget Token',
+      prompt:      'TryTokka → Settings → Apps → Widget Token',
+      placeHolder: '64-character hex token',
       password:    true,
       ignoreFocusOut: true,
       validateInput(value) {
         if (!value?.trim()) return 'Token cannot be empty'
-        if (!looksLikeToken(value)) return 'That doesn\'t look like a TryTokka token — it should be at least 20 characters'
+        if (!looksLikeToken(value)) {
+          return 'That doesn\'t look like a TryTokka widget token (20–256 chars, no spaces).'
+        }
         return undefined
       },
     })
 
     if (!token) return
 
-    // Step 3: verify it works before saving
     const testResult = await fetchSpend(token.trim())
     if (!testResult.ok) {
-      vscode.window.showErrorMessage(`Scout: Token check failed — ${testResult.message}`)
+      await vscode.window.showErrorMessage(
+        `Scout: Token check failed — ${testResult.message}`,
+        'Try again',
+      ).then(c => { if (c === 'Try again') void pasteToken() })
       return
     }
 
     await storage.setToken(token.trim())
-    vscode.window.showInformationMessage(`Scout: Connected! AI spend for this month: $${testResult.data.monthCost.toFixed(2)} 🦎`)
+    await vscode.window.showInformationMessage(
+      `Scout: Connected! AI spend for this month: $${testResult.data.monthCost.toFixed(2)}`,
+    )
     await refresh()
   }
 
+  async function connectAccount(): Promise<void> {
+    const choice = await vscode.window.showInformationMessage(
+      'Scout needs a TryTokka Widget Token (or try the demo first).',
+      'I have a token',
+      'Try demo',
+      'Create free account →',
+    )
+
+    if (!choice) return
+
+    if (choice === 'Try demo') {
+      await startDemo()
+      return
+    }
+
+    if (choice === 'Create free account →') {
+      await vscode.env.openExternal(vscode.Uri.parse(`${APP_URL}/signup?ref=vscode`))
+      await new Promise<void>(r => setTimeout(r, 1500))
+    }
+
+    await pasteToken()
+  }
+
+  async function startDemo(): Promise<void> {
+    await storage.clearToken()
+    await storage.enableDemoMode()
+    // Seed last cost so demo doesn't look like a spike on every refresh
+    storage.setLastMonthCost(demoSpendData().monthCost)
+    await vscode.window.showInformationMessage(
+      'Scout: Demo mode on — sample spend in your status bar. Paste a Widget Token anytime for live data.',
+      'Paste token',
+    ).then(c => { if (c === 'Paste token') void pasteToken() })
+    await refresh()
+    void vscode.commands.executeCommand('workbench.view.extension.scout-sidebar')
+  }
+
   function openDashboard(): void {
-    vscode.env.openExternal(vscode.Uri.parse(`${APP_URL}/dashboard`))
+    void vscode.env.openExternal(vscode.Uri.parse(`${APP_URL}/dashboard`))
   }
 
   context.subscriptions.push(
-    vscode.commands.registerCommand('scout.connect', connectAccount),
+    vscode.commands.registerCommand('scout.connect', () => connectAccount()),
+    vscode.commands.registerCommand('scout.pasteToken', () => pasteToken()),
+    vscode.commands.registerCommand('scout.tryDemo', () => startDemo()),
 
     vscode.commands.registerCommand('scout.disconnect', async () => {
       const confirm = await vscode.window.showWarningMessage(
-        'Disconnect Scout from TryTokka? Spend tracking will stop.',
+        storage.isDemoMode()
+          ? 'Exit Scout demo mode?'
+          : 'Disconnect Scout from TryTokka? Spend tracking will stop.',
         { modal: true },
-        'Disconnect',
+        storage.isDemoMode() ? 'Exit demo' : 'Disconnect',
       )
-      if (confirm === 'Disconnect') {
+      if (confirm === 'Disconnect' || confirm === 'Exit demo') {
         await storage.clearToken()
+        await storage.clearDemoMode()
+        lastPsychShowCta = false
         updateStatusBar(statusBar, null, false)
         sidebarProvider.showDisconnected()
-        vscode.window.showInformationMessage('Scout disconnected.')
+        await vscode.window.showInformationMessage(
+          confirm === 'Exit demo' ? 'Scout demo ended.' : 'Scout disconnected.',
+        )
       }
     }),
 
-    vscode.commands.registerCommand('scout.refresh', refresh),
+    vscode.commands.registerCommand('scout.refresh', () => refresh()),
 
     vscode.commands.registerCommand('scout.openPanel', () => {
-      vscode.commands.executeCommand('workbench.view.extension.scout-sidebar')
+      void vscode.commands.executeCommand('workbench.view.extension.scout-sidebar')
     }),
 
     vscode.commands.registerCommand('scout.openSignup', () => {
-      vscode.env.openExternal(vscode.Uri.parse(`${APP_URL}/signup?ref=vscode`))
+      void vscode.env.openExternal(vscode.Uri.parse(`${APP_URL}/signup?ref=vscode`))
     }),
 
-    // React to relevant setting changes without a reload.
     vscode.workspace.onDidChangeConfiguration(e => {
       if (e.affectsConfiguration('scout.refreshIntervalMinutes')) {
         scheduleRefresh()
@@ -196,15 +269,40 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       if (e.affectsConfiguration('scout.showInStatusBar')) {
         applyStatusBarVisibility()
       }
+      if (e.affectsConfiguration('scout.localAlertThresholdUsd')) {
+        void refresh()
+      }
     }),
+
+    { dispose: () => { if (refreshTimer) clearInterval(refreshTimer) } },
   )
 
-  // ── Initial load ───────────────────────────────────────────────────────────
+  // Wire webview actions that need host-side handlers
+  sidebarProvider.setActionHandler((type) => {
+    switch (type) {
+      case 'connect':    void pasteToken(); break
+      case 'tryDemo':    void startDemo(); break
+      case 'pasteToken': void pasteToken(); break
+      default: break
+    }
+  })
+
   applyStatusBarVisibility()
   await refresh()
   scheduleRefresh()
-  // Register disposal AFTER scheduleRefresh() so refreshTimer is defined.
-  context.subscriptions.push({ dispose: () => { if (refreshTimer) clearInterval(refreshTimer) } })
+
+  // First-run: open sidebar once so people discover the surface (GEO of use)
+  if (!storage.hasAutoOpenedSidebar()) {
+    storage.markSidebarAutoOpened()
+    setTimeout(() => {
+      void vscode.commands.executeCommand('workbench.view.extension.scout-sidebar')
+    }, 800)
+  }
 }
 
-export function deactivate(): void { /* cleanup handled by subscriptions */ }
+function shortErr(message: string): string {
+  const m = message.replace(/^Scout:\s*/i, '')
+  return m.length > 28 ? `${m.slice(0, 26)}…` : m
+}
+
+export function deactivate(): void { /* cleanup via subscriptions */ }
