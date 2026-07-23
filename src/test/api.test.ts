@@ -28,11 +28,21 @@ describe('parseSpendPayload', () => {
       topProvider: 'openai',
       alertStatus: 'warning',
       lastUpdated: '2026-07-15T10:00:00.000Z',
+      lastSuccessfulSyncAt: '2026-07-15T09:30:00.000Z',
     })
     assert.ok(data)
     assert.equal(data!.monthCost, 40)
     assert.equal(data!.alertStatus, 'warning')
     assert.equal(data!.topProvider, 'openai')
+    assert.equal(data!.lastSuccessfulSyncAt, '2026-07-15T09:30:00.000Z')
+  })
+
+  it('defaults lastSuccessfulSyncAt to null when absent or empty', () => {
+    assert.equal(parseSpendPayload({ monthCost: 1 })!.lastSuccessfulSyncAt, null)
+    assert.equal(
+      parseSpendPayload({ monthCost: 1, lastSuccessfulSyncAt: '' })!.lastSuccessfulSyncAt,
+      null,
+    )
   })
 
   it('coerces junk numbers and unknown alertStatus', () => {
@@ -48,6 +58,7 @@ describe('parseSpendPayload', () => {
     assert.equal(data!.alertStatus, 'safe')
     assert.equal(data!.topProvider, null)
     assert.ok(data!.lastUpdated)
+    assert.equal(data!.lastSuccessfulSyncAt, null)
   })
 
   it('returns null for non-objects', () => {

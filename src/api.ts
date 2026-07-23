@@ -16,7 +16,8 @@ export interface SpendData {
   totalCost: number        // rolling 30-day
   topProvider: string | null
   alertStatus: 'safe' | 'warning' | 'critical'
-  lastUpdated: string      // ISO timestamp
+  lastUpdated: string      // ISO timestamp — response generation time (always ~now)
+  lastSuccessfulSyncAt: string | null // ISO timestamp of the last real provider sync; null before the first sync
 }
 
 export type FetchResult =
@@ -43,6 +44,12 @@ export function parseSpendPayload(raw: unknown): SpendData | null {
     typeof o.lastUpdated === 'string' && o.lastUpdated
       ? o.lastUpdated
       : new Date().toISOString()
+  // Real data freshness. null is meaningful (valid token, no successful sync yet),
+  // so only a non-empty string counts as a sync time — anything else stays null.
+  const lastSuccessfulSyncAt =
+    typeof o.lastSuccessfulSyncAt === 'string' && o.lastSuccessfulSyncAt
+      ? o.lastSuccessfulSyncAt
+      : null
 
   return {
     todayCost: asFiniteNumber(o.todayCost),
@@ -51,6 +58,7 @@ export function parseSpendPayload(raw: unknown): SpendData | null {
     topProvider: top,
     alertStatus,
     lastUpdated,
+    lastSuccessfulSyncAt,
   }
 }
 

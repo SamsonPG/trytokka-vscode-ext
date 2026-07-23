@@ -10,6 +10,7 @@ describe('demoSpendData', () => {
     assert.ok(Number.isFinite(d.todayCost))
     assert.equal(d.topProvider, 'OpenAI')
     assert.ok(['safe', 'warning', 'critical'].includes(d.alertStatus))
+    assert.equal(typeof d.lastSuccessfulSyncAt, 'string')
   })
 })
 

@@ -24,5 +24,6 @@ export function demoSpendData(now = new Date()): SpendData {
     topProvider: 'OpenAI',
     alertStatus: monthCost > 40 ? 'warning' : 'safe',
     lastUpdated: now.toISOString(),
+    lastSuccessfulSyncAt: now.toISOString(),
   }
 }

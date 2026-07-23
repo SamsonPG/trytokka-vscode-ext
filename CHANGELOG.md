@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.0.10 — 2026-07-24
+
+- **Real spend freshness.** The panel now reads the API's `lastSuccessfulSyncAt`
+  (the actual last provider sync) instead of `lastUpdated` (the response
+  timestamp, which always read "just now"). The footer shows `Synced 12m ago` /
+  `3h ago` / `2d ago`, turns amber when no sync has succeeded in 3h+, and shows
+  "Waiting for first sync…" before the first sync — so a stalled sync no longer
+  looks fresh. Falls back to the response time on demo/older API payloads.
+
 ## 1.0.9 — 2026-07-15
 
 - **Marketplace / panel:** full-color Scout mascot again (`media/icon.png` synced from TryTokka web icons).

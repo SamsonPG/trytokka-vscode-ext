@@ -122,6 +122,7 @@ export class ScoutSidebarProvider implements vscode.WebviewViewProvider {
         topProvider:  data.topProvider,
         alertStatus:  data.alertStatus,
         lastUpdated:  data.lastUpdated,
+        lastSuccessfulSyncAt: data.lastSuccessfulSyncAt,
       },
       psych: {
         spendPhrase: state.spendPhrase,
@@ -396,6 +397,7 @@ body {
 .footer a:hover { color: var(--text-muted); }
 .footer-sep { color: var(--rim-2); }
 .updated { font-size: 10px; color: var(--text-faint); text-align: right; }
+.updated.stale { color: var(--vscode-editorWarning-foreground, #d1a054); }
 
 /* ── Divider ─────────────────────────────────────────────────────────── */
 .divider { height: 1px; background: var(--rim); }
@@ -629,14 +631,33 @@ function render(data, psych, demoMode) {
       '. Set an alert so Scout emails you before the bill arrives.'
   }
 
-  // Last updated (guard invalid / missing timestamps)
-  const ts = Date.parse(data.lastUpdated)
-  if (!Number.isFinite(ts)) {
-    document.getElementById('lastUpdated').textContent = 'Updated just now'
+  // Freshness. Prefer lastSuccessfulSyncAt (the real provider-sync time) —
+  // lastUpdated is only the response timestamp, so it always reads "just now"
+  // and would hide spend that's stale because a provider sync stalled.
+  const freshEl = document.getElementById('lastUpdated')
+  freshEl.classList.remove('stale')
+  const syncRaw = data.lastSuccessfulSyncAt
+  if (syncRaw === null) {
+    // Valid token, but no provider has ever synced yet.
+    freshEl.textContent = 'Waiting for first sync…'
+    freshEl.classList.add('stale')
   } else {
-    const mins = Math.max(0, Math.round((Date.now() - ts) / 60000))
-    document.getElementById('lastUpdated').textContent = mins < 2 ? 'Updated just now' : 'Updated ' + mins + 'm ago'
+    const syncTs   = Date.parse(syncRaw)            // NaN when the field is absent (demo / older API)
+    const useSync  = Number.isFinite(syncTs)
+    const ts       = useSync ? syncTs : Date.parse(data.lastUpdated)
+    const mins     = Number.isFinite(ts) ? Math.max(0, Math.round((Date.now() - ts) / 60000)) : 0
+    freshEl.textContent = (useSync ? 'Synced ' : 'Updated ') + agoLabel(mins)
+    if (useSync && mins >= 180) freshEl.classList.add('stale')   // no successful sync in 3h+
   }
+}
+
+// Compact relative-time label: "just now" · "12m ago" · "3h ago" · "2d ago".
+function agoLabel(mins) {
+  if (mins < 2)  return 'just now'
+  if (mins < 60) return mins + 'm ago'
+  const hrs = Math.round(mins / 60)
+  if (hrs < 24) return hrs + 'h ago'
+  return Math.round(hrs / 24) + 'd ago'
 }
 </script>
 </body>

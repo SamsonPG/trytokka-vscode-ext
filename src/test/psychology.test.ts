@@ -23,6 +23,7 @@ const baseSpend = (over: Partial<SpendData> = {}): SpendData => ({
   topProvider: 'anthropic',
   alertStatus: 'safe',
   lastUpdated: new Date().toISOString(),
+  lastSuccessfulSyncAt: new Date().toISOString(),
   ...over,
 })
 
